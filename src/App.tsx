@@ -507,44 +507,151 @@ function RequestManager() {
   const [requests, setRequests] = useState<Record<string, unknown>[]>([])
   const [products, setProducts] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [updating, setUpdating] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [phone, setPhone] = useState('')
-  const [productName, setProductName] = useState('')
+  const [productId, setProductId] = useState('')
   const [variant, setVariant] = useState('')
-  const [saving, setSaving] = useState(false)
+  const [depositAmount, setDepositAmount] = useState('')
+  const [depositMethod, setDepositMethod] = useState('bank_transfer')
+  const [depositProofUrl, setDepositProofUrl] = useState('')
+
   async function refresh() {
-    if (!supabase) return
+    if (!supabase) { setLoading(false); return }
     const [requestResult, productResult] = await Promise.all([
       supabase.from('requests').select('*').order('created_at', { ascending: false }).limit(100),
       supabase.from('catalog_products').select('id,name').eq('is_active', true).order('name'),
     ])
-    if (requestResult.error) setNotice('Gagal memuat request. Pastikan migrasi database sudah diterapkan.')
+    if (requestResult.error) setNotice('Gagal memuat request. Pastikan migration database sudah diterapkan.')
     else setRequests((requestResult.data || []) as Record<string, unknown>[])
     setProducts(productResult.data || [])
     setLoading(false)
   }
+
   useEffect(() => { void refresh() }, [])
+
   async function createRequest(event: FormEvent) {
     event.preventDefault()
     if (!supabase) return
+    const product = products.find(item => item.id === productId)
+    if (!product) { setNotice('Pilih model produk yang valid.'); return }
+    const amount = Number(depositAmount) || 0
+    if (amount < 0) { setNotice('Nominal deposit tidak boleh negatif.'); return }
+    if (amount > 0 && depositMethod !== 'cash' && !depositProofUrl.trim()) {
+      setNotice('Masukkan URL bukti transfer untuk deposit non-tunai.')
+      return
+    }
     setSaving(true); setNotice('')
     const { error } = await supabase.from('requests').insert({
-      customer_name: customerName.trim(), customer_phone: phone.trim(),
-      requested_product_name: productName, requested_variant: variant.trim() || null,
+      customer_name: customerName.trim(),
+      customer_phone: phone.trim(),
+      product_id: product.id,
+      requested_product_name: product.name,
+      requested_variant: variant.trim() || null,
+      deposit_amount: amount,
+      deposit_method: depositMethod,
+      deposit_proof_url: depositProofUrl.trim() || null,
+      deposit_payment_status: amount > 0 ? 'awaiting_verification' : 'not_received',
       status: 'new',
     })
     setSaving(false)
     if (error) setNotice('Request gagal disimpan. Periksa data dan koneksi database.')
-    else { setNotice('Request berhasil ditambahkan.'); setCustomerName(''); setPhone(''); setProductName(''); setVariant(''); await refresh() }
+    else {
+      setNotice('Request berhasil ditambahkan. Deposit menunggu verifikasi admin.')
+      setCustomerName(''); setPhone(''); setProductId(''); setVariant('')
+      setDepositAmount(''); setDepositMethod('bank_transfer'); setDepositProofUrl('')
+      await refresh()
+    }
   }
+
   async function updateStatus(id: string, status: string) {
     if (!supabase) return
+    setUpdating(id); setNotice('')
     const { error } = await supabase.from('requests').update({ status }).eq('id', id)
+    setUpdating(null)
     if (error) setNotice('Status request gagal diperbarui.')
     else { setNotice('Status request diperbarui.'); await refresh() }
   }
-  return <div className="admin-view"><div className="admin-section-intro"><div><span className="eyebrow">CUSTOMER WISHLIST</span><h2>Daftar request</h2><p>Catat barang yang dicari dan pantau progres pengecekan admin.</p></div></div>{notice && <div className="inline-notice">{notice}</div>}<div className="admin-panel add-product-panel"><div className="panel-heading"><div><span className="eyebrow">NEW REQUEST</span><h3>Catat request pelanggan</h3></div></div><form className="admin-inline-form request-form" onSubmit={createRequest}><label>Nama pelanggan<input required value={customerName} onChange={e => setCustomerName(e.target.value)} /></label><label>Nomor WhatsApp<input required value={phone} onChange={e => setPhone(e.target.value)} /></label><label>Model produk<select required value={productName} onChange={e => setProductName(e.target.value)}><option value="">Pilih model</option>{products.map(product => <option key={product.id} value={product.name}>{product.name}</option>)}</select></label><label>Warna / catatan<input value={variant} onChange={e => setVariant(e.target.value)} placeholder="Warna atau detail lain" /></label><button className="button button-dark" disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan Request'}</button></form></div><div className="admin-panel"><div className="panel-heading"><div><span className="eyebrow">REQUEST TRACKER</span><h3>{requests.length} request terbaru</h3></div></div>{loading ? <div className="admin-loading"><span className="spinner" /> Memuat request…</div> : requests.length ? <div className="request-list">{requests.map(request => <div className="request-row" key={String(request.id)}><div className="request-avatar">{String(request.customer_name || 'C').slice(0,1).toUpperCase()}</div><div className="request-detail"><strong>{String(request.requested_product_name)}</strong><span>{String(request.customer_name || 'Nama belum diisi')} · {String(request.customer_phone || 'No. HP belum diisi')}</span><small>{String(request.requested_variant || 'Varian belum ditentukan')} · {new Date(String(request.created_at)).toLocaleDateString('id-ID')}</small></div><select aria-label={`Status request ${String(request.requested_product_name)}`} value={String(request.status)} onChange={e => void updateStatus(String(request.id), e.target.value)}><option value="new">Baru</option><option value="deposit_received">Deposit diterima</option><option value="searching">Sedang dicari</option><option value="found">Ditemukan</option><option value="not_found">Tidak ditemukan</option><option value="converted">Menjadi order</option><option value="cancelled">Dibatalkan</option></select></div>)}</div> : <div className="empty-state"><CircleHelp size={24} /><strong>Belum ada request</strong><span>Request pelanggan yang dicatat akan tampil di sini.</span></div>}</div></div>
+
+  async function verifyDeposit(request: Record<string, unknown>, nextStatus: 'verified' | 'rejected') {
+    if (!supabase) return
+    if (nextStatus === 'verified' && Number(request.deposit_amount) <= 0) {
+      setNotice('Nominal deposit harus lebih dari nol sebelum diverifikasi.')
+      return
+    }
+    setUpdating(String(request.id)); setNotice('')
+    const update = nextStatus === 'verified'
+      ? { deposit_payment_status: 'verified', deposit_received_at: new Date().toISOString(), status: 'deposit_received' }
+      : { deposit_payment_status: 'rejected' }
+    const { error } = await supabase.from('requests').update(update).eq('id', String(request.id))
+    setUpdating(null)
+    if (error) setNotice('Status verifikasi deposit gagal disimpan.')
+    else { setNotice(nextStatus === 'verified' ? 'Deposit request telah diverifikasi.' : 'Deposit ditandai belum valid.'); await refresh() }
+  }
+
+  const depositLabels: Record<string,string> = {
+    not_received: 'Belum ada deposit',
+    awaiting_verification: 'Menunggu verifikasi',
+    verified: 'Terverifikasi',
+    applied_to_order: 'Masuk ke order',
+    refunded: 'Direfund',
+    rejected: 'Bukti ditolak',
+  }
+
+  return (
+    <div className="admin-view">
+      <div className="admin-section-intro">
+        <div><span className="eyebrow">CUSTOMER WISHLIST</span><h2>Daftar request</h2><p>Catat wishlist dan bukti deposit sebelum admin mulai mencari barang.</p></div>
+      </div>
+      {notice && <div className="inline-notice">{notice}</div>}
+      <div className="admin-panel add-product-panel">
+        <div className="panel-heading"><div><span className="eyebrow">NEW REQUEST</span><h3>Catat request & deposit awal</h3></div></div>
+        <form className="admin-inline-form request-form request-form-deposit" onSubmit={createRequest}>
+          <label>Nama pelanggan<input required value={customerName} onChange={e => setCustomerName(e.target.value)} /></label>
+          <label>Nomor WhatsApp<input required value={phone} onChange={e => setPhone(e.target.value)} /></label>
+          <label>Model produk<select required value={productId} onChange={e => setProductId(e.target.value)}><option value="">Pilih model</option>{products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
+          <label>Warna / catatan<input value={variant} onChange={e => setVariant(e.target.value)} placeholder="Warna atau detail lain" /></label>
+          <label>Deposit diterima (Rp)<input type="number" min="0" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} placeholder="Opsional, sesuai bukti" /></label>
+          <label>Metode deposit<select value={depositMethod} onChange={e => setDepositMethod(e.target.value)}><option value="bank_transfer">Transfer bank</option><option value="qris">QRIS</option><option value="cash">Tunai</option><option value="shopee">Shopee</option></select></label>
+          <label className="request-proof-field">Link bukti transfer<input type="url" value={depositProofUrl} onChange={e => setDepositProofUrl(e.target.value)} placeholder="URL bukti (wajib untuk non-tunai)" /></label>
+          <button className="button button-dark" disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan Request'}</button>
+        </form>
+      </div>
+      <div className="admin-panel">
+        <div className="panel-heading"><div><span className="eyebrow">REQUEST TRACKER</span><h3>{requests.length} request terbaru</h3></div></div>
+        {loading ? <div className="admin-loading"><span className="spinner" /> Memuat request…</div> : requests.length ? (
+          <div className="request-list">
+            {requests.map(request => (
+              <div className="request-row request-row-expanded" key={String(request.id)}>
+                <div className="request-avatar">{String(request.customer_name || 'C').slice(0,1).toUpperCase()}</div>
+                <div className="request-detail">
+                  <strong>{String(request.requested_product_name)}</strong>
+                  <span>{String(request.customer_name || 'Nama belum diisi')} · {String(request.customer_phone || 'No. HP belum diisi')}</span>
+                  <small>{String(request.requested_variant || 'Varian belum ditentukan')} · {new Date(String(request.created_at)).toLocaleDateString('id-ID')}</small>
+                  <div className="request-deposit-meta">
+                    <span className="status-pill status-muted">{depositLabels[String(request.deposit_payment_status)] || 'Status deposit'}</span>
+                    <strong>{Number(request.deposit_amount) > 0 ? formatRupiah(Number(request.deposit_amount)) : 'Tanpa deposit tercatat'}</strong>
+                    {request.deposit_proof_url ? <a className="table-link" href={String(request.deposit_proof_url)} target="_blank" rel="noreferrer">Lihat bukti <ArrowUpRight size={12} /></a> : null}
+                  </div>
+                  {request.deposit_payment_status === 'awaiting_verification' ? (
+                    <div className="request-review-actions">
+                      <button type="button" disabled={updating === String(request.id)} onClick={() => void verifyDeposit(request, 'verified')}>Verifikasi deposit</button>
+                      <button type="button" disabled={updating === String(request.id)} onClick={() => void verifyDeposit(request, 'rejected')}>Tolak bukti</button>
+                    </div>
+                  ) : null}
+                </div>
+                <select aria-label={`Status request ${String(request.requested_product_name)}`} disabled={updating === String(request.id)} value={String(request.status)} onChange={e => void updateStatus(String(request.id), e.target.value)}>
+                  <option value="new">Baru</option><option value="deposit_received">Deposit diterima</option><option value="searching">Sedang dicari</option><option value="found">Ditemukan</option><option value="not_found">Tidak ditemukan</option><option value="converted">Menjadi order</option><option value="cancelled">Dibatalkan</option>
+                </select>
+              </div>
+            ))}
+          </div>
+        ) : <div className="empty-state"><CircleHelp size={24} /><strong>Belum ada request</strong><span>Request pelanggan yang dicatat akan tampil di sini.</span></div>}
+      </div>
+    </div>
+  )
 }
 
 type OrderDraftItem = {

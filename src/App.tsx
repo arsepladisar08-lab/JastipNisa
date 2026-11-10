@@ -73,6 +73,30 @@ function WhatsAppButton({ message, label = 'Mulai Pesanan' }: { message: string;
   return <a className="button button-dark" href={url} target="_blank" rel="noreferrer">{label} <ArrowUpRight size={16} /></a>
 }
 
+function PrivateFileLink({ bucket, path, label }: { bucket: 'unit-photos' | 'payment-proofs'; path: string; label: string }) {
+  const [url, setUrl] = useState('')
+  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    let alive = true
+    if (/^https?:\\/\\//i.test(path)) {
+      setUrl(path)
+      return () => { alive = false }
+    }
+    if (!supabase || !path) return () => { alive = false }
+    setLoading(true)
+    void supabase.storage.from(bucket).createSignedUrl(path, 60 * 60).then(({ data, error }) => {
+      if (alive) {
+        setUrl(error ? '' : data?.signedUrl || '')
+        setLoading(false)
+      }
+    })
+    return () => { alive = false }
+  }, [bucket, path])
+  if (loading) return <span className="table-muted">Menyiapkan link…</span>
+  if (!url) return <span className="table-muted">File tidak dapat dibuka</span>
+  return <a className="table-link" href={url} target="_blank" rel="noreferrer">{label} <ArrowUpRight size={12} /></a>
+}
+
 function ProductVisual({ product, large = false }: { product: CatalogProduct; large?: boolean }) {
   if (product.imageUrl) return <div className={large ? 'product-visual product-visual-large' : 'product-visual'}><img src={product.imageUrl} alt={product.name} loading="lazy" /></div>
   return (

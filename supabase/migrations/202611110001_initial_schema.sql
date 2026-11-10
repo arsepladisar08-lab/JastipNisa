@@ -414,8 +414,9 @@ begin
       raise exception 'Source request deposit must be verified before order conversion' using errcode = '22023';
     end if;
     if v_request_product_id is not null and not exists (
-      select 1 from jsonb_array_elements(p_payload -> 'items') item
-      where nullif(item ->> 'product_id', '')::uuid = v_request_product_id
+      select 1
+      from jsonb_array_elements(p_payload -> 'items') as items(value)
+      where nullif(value ->> 'product_id', '')::uuid = v_request_product_id
     ) then
       raise exception 'Order items must include the product requested in the source request' using errcode = '22023';
     end if;

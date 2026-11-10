@@ -540,3 +540,21 @@ td small { margin-top: 4px; color: #a0948b; font-size: 8px; }
 @media (max-width: 640px) {
   .expense-form { grid-template-columns: 1fr; }
 }
+
+.request-form-deposit { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.request-form-deposit .request-proof-field { grid-column: span 2; }
+.request-row-expanded { align-items: flex-start; }
+.request-deposit-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 8px; }
+.request-deposit-meta > strong { color: #74645b; font-size: 9px; }
+.request-review-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.request-review-actions button { min-height: 27px; padding: 0 9px; border: 1px solid #e4d6ce; background: #fff; color: #6f846b; font-size: 8px; cursor: pointer; }
+.request-review-actions button:last-child { color: #a65c55; }
+.request-review-actions button:disabled { opacity: .55; cursor: wait; }
+@media (max-width: 900px) {
+  .request-form-deposit { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .request-form-deposit .request-proof-field { grid-column: span 2; }
+}
+@media (max-width: 640px) {
+  .request-form-deposit { grid-template-columns: 1fr; }
+  .request-form-deposit .request-proof-field { grid-column: auto; }
+}

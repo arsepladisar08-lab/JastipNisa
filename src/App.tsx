@@ -412,9 +412,27 @@ function UnitsManager() {
       'JN-' + new Date().toISOString().slice(2, 10).replace(/-/g, '') +
       '-' + crypto.randomUUID().slice(0, 6).toUpperCase()
     )
+    let variantId: string | null = null
+    if (variant.trim()) {
+      const { data: existingVariant, error: variantLookupError } = await supabase
+        .from('catalog_variants').select('id').eq('product_id', productId).eq('name', variant.trim()).maybeSingle()
+      if (variantLookupError) {
+        setSaving(false); setNotice('Varian unit gagal diperiksa.'); return
+      }
+      if (existingVariant) variantId = existingVariant.id
+      else {
+        const { data: newVariant, error: variantInsertError } = await supabase
+          .from('catalog_variants').insert({ product_id: productId, name: variant.trim() }).select('id').single()
+        if (variantInsertError || !newVariant) {
+          setSaving(false); setNotice('Varian unit gagal disimpan.'); return
+        }
+        variantId = newVariant.id
+      }
+    }
     const { error } = await supabase.from('units').insert({
       unit_code: generatedCode,
       product_id: productId,
+      variant_id: variantId,
       purchase_price: purchasePrice ? Number(purchasePrice) : null,
       selling_price: sellingPrice ? Number(sellingPrice) : null,
       actual_photo_urls: photoUrl.trim() ? [photoUrl.trim()] : [],
@@ -452,6 +470,7 @@ function UnitsManager() {
         <form className="admin-inline-form unit-form" onSubmit={createUnit}>
           <label>Model katalog<select required value={productId} onChange={e => setProductId(e.target.value)}><option value="">Pilih model</option>{products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
           <label>Kode unit (opsional)<input value={unitCode} onChange={e => setUnitCode(e.target.value)} placeholder="Otomatis jika kosong" /></label>
+          <label>Varian / warna<input value={variant} onChange={e => setVariant(e.target.value)} placeholder="Contoh: Black, Ivory" /></label>
           <label>Harga beli (Rp)<input type="number" min="0" value={purchasePrice} onChange={e => setPurchasePrice(e.target.value)} placeholder="Modal aktual" /></label>
           <label>Harga jual disepakati (Rp)<input type="number" min="0" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} placeholder="Harga ke customer" /></label>
           <label className="unit-photo-field">URL foto aktual<input type="url" value={photoUrl} onChange={e => setPhotoUrl(e.target.value)} placeholder="Link foto unit dari Drive / storage" /></label>

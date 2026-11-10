@@ -702,7 +702,7 @@ function OrdersManager() {
   async function refresh() {
     if (!supabase) { setLoading(false); return }
     const [orderResult, productResult, unitResult, requestResult] = await Promise.all([
-      supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username,shopee_checkout_url,product_count,jastip_fee,shipping_fee,source_request_id,payments(amount,payment_type),shipments(courier,tracking_number,status,processed_at,shipped_at)').order('created_at', { ascending: false }).limit(100),
+      supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username,customer_shopee_confirmed_at,shopee_checkout_url,product_count,jastip_fee,shipping_fee,source_request_id,payments(amount,payment_type),shipments(courier,tracking_number,status,processed_at,shipped_at)').order('created_at', { ascending: false }).limit(100),
       supabase.from('catalog_products').select('id,name,official_price').eq('is_active', true).order('name'),
       supabase.from('units').select('id,unit_code,product_id,condition_notes').eq('status', 'available').order('created_at', { ascending: false }).limit(300),
       supabase.from('requests').select('id,customer_name,customer_phone,product_id,requested_product_name,requested_variant,deposit_amount,deposit_method,deposit_proof_url').eq('status', 'found').eq('deposit_payment_status', 'verified').order('created_at', { ascending: false }).limit(100),
@@ -821,6 +821,15 @@ function OrdersManager() {
 
   async function changeOrderStatus(orderId: string, status: string) {
     if (!supabase) return
+    const currentOrder = orders.find(order => String(order.id) === orderId)
+    if (
+      currentOrder?.checkout_method === 'shopee'
+      && ['packing', 'shipped', 'completed'].includes(status)
+      && (!String(currentOrder.shopee_username || '').trim() || !currentOrder.customer_shopee_confirmed_at)
+    ) {
+      setNotice('Konfirmasi nama akun Shopee dari pelanggan terlebih dahulu sebelum order masuk tahap packing/pengiriman.')
+      return
+    }
     setUpdatingOrder(orderId); setNotice('')
     const { error } = await supabase.from('orders').update({ status }).eq('id', orderId)
     setUpdatingOrder(null)
@@ -871,6 +880,15 @@ function OrdersManager() {
 
   async function saveShipment(orderId: string) {
     if (!supabase) return
+    const currentOrder = orders.find(order => String(order.id) === orderId)
+    if (
+      currentOrder?.checkout_method === 'shopee'
+      && ['preparing', 'shipped', 'delivered'].includes(shipmentStatus)
+      && (!String(currentOrder.shopee_username || '').trim() || !currentOrder.customer_shopee_confirmed_at)
+    ) {
+      setNotice('Sebelum packing/pengiriman Shopee, simpan dulu nama akun Shopee yang sudah dikonfirmasi pelanggan.')
+      return
+    }
     if (shipmentStatus === 'shipped' && !shipmentTracking.trim()) {
       setNotice('Isi nomor resi sebelum menandai paket sudah dikirim.')
       return

@@ -85,9 +85,13 @@ function ProductVisual({ product, large = false }: { product: CatalogProduct; la
 }
 
 function ProductCard({ product }: { product: CatalogProduct }) {
+  const requestUrl = buildWhatsAppUrl(
+    "Halo Admin JastipNisa, saya ingin request model " + product.name +
+    ". Mohon bantu cek ketersediaan dan kirim foto unit aktual jika ditemukan. Saya akan sertakan bukti deposit/transfer di chat ini."
+  )
   return (
     <article className="product-card">
-      <a href={product.officialUrl} target="_blank" rel="noreferrer" className="product-link" aria-label={`Lihat ${product.name} di katalog resmi Flicka`}>
+      <a href={product.officialUrl} target="_blank" rel="noreferrer" className="product-link" aria-label={"Lihat " + product.name + " di katalog resmi Flicka"}>
         <ProductVisual product={product} />
         <span className="availability-tag"><span /> Perlu konfirmasi admin</span>
         <div className="product-info">
@@ -96,6 +100,9 @@ function ProductCard({ product }: { product: CatalogProduct }) {
         </div>
         <span className="product-arrow"><ArrowUpRight size={17} /></span>
       </a>
+      {requestUrl
+        ? <a className="product-request-link" href={requestUrl} target="_blank" rel="noreferrer">Request model ini <ArrowUpRight size={14} /></a>
+        : <span className="product-request-hint">Nomor admin belum dikonfigurasi</span>}
     </article>
   )
 }

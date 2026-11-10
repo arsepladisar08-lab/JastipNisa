@@ -38,6 +38,7 @@ as $$
 $$;
 
 revoke all on function public.is_admin() from public;
+revoke all on function public.handle_new_user() from public;
 grant execute on function public.is_admin() to authenticated;
 
 create or replace function public.handle_new_user()
@@ -277,6 +278,11 @@ end;
 $$;
 
 -- Catalog mutations are admin-only; active SELECT policy remains public.
+drop policy if exists "Admin reads all catalog products" on public.catalog_products;
+create policy "Admin reads all catalog products"
+  on public.catalog_products for select to authenticated
+  using (public.is_admin());
+
 drop policy if exists "Admin inserts catalog products" on public.catalog_products;
 create policy "Admin inserts catalog products"
   on public.catalog_products for insert to authenticated with check (public.is_admin());

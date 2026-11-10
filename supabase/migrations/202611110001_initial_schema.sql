@@ -682,3 +682,60 @@ create policy "JastipNisa admins manage private files"
     bucket_id in ('unit-photos', 'payment-proofs')
     and public.is_admin()
   );
+
+
+-- Keep physical stock state aligned with order fulfillment. A cancellation before
+-- shipment releases any reserved/packed unit; payment refunds remain a separate
+-- explicit admin ledger action.
+create or replace function public.sync_order_unit_status()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status = old.status then
+    return new;
+  end if;
+
+  if new.status = 'packing' then
+    update public.units u
+    set status = 'packed'
+    where u.id in (
+      select oi.unit_id from public.order_items oi
+      where oi.order_id = new.id and oi.unit_id is not null
+    ) and u.status = 'reserved';
+
+  elsif new.status = 'shipped' then
+    update public.units u
+    set status = 'shipped'
+    where u.id in (
+      select oi.unit_id from public.order_items oi
+      where oi.order_id = new.id and oi.unit_id is not null
+    ) and u.status in ('reserved', 'packed');
+
+  elsif new.status = 'completed' then
+    update public.units u
+    set status = 'completed'
+    where u.id in (
+      select oi.unit_id from public.order_items oi
+      where oi.order_id = new.id and oi.unit_id is not null
+    ) and u.status in ('reserved', 'packed', 'shipped');
+
+  elsif new.status = 'cancelled' and old.status not in ('shipped', 'completed') then
+    update public.units u
+    set status = 'available'
+    where u.id in (
+      select oi.unit_id from public.order_items oi
+      where oi.order_id = new.id and oi.unit_id is not null
+    ) and u.status in ('reserved', 'packed');
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_order_unit_status on public.orders;
+create trigger sync_order_unit_status
+  after update of status on public.orders
+  for each row execute function public.sync_order_unit_status();

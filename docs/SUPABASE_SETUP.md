@@ -21,7 +21,7 @@ Review the migration before applying it to any existing production database. Thi
 
 ## 4. Seed official catalog references
 
-Run `supabase/seed.sql`. The 12 product rows are a point-in-time reference snapshot from the official product listing. It does not create physical stock records and does not guarantee price/variant availability. Recheck source prices and product pages before quoting a customer.
+Run `supabase/seed.sql`. The 12 product rows are a point-in-time reference snapshot from the official product listing. It does not create physical stock records and does not guarantee price/variant availability. Recheck source prices and product pages before quoting a customer. Run `supabase/tests/fee_rule_test.sql` to verify the database fee schedule.
 
 ## 5. Create and promote the first admin
 

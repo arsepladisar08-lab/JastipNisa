@@ -112,7 +112,7 @@ function useCatalog() {
         .select('id,name,slug,category,official_price,official_product_url,image_url,source_checked_at,is_active')
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
-      if (active && !error && data && data.length) setProducts(data.map(mapCatalogRow))
+      if (active && !error && data) setProducts(data.map(mapCatalogRow))
       if (active) setLoading(false)
     }
     void load()

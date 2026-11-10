@@ -562,6 +562,7 @@ function RequestManager() {
   const [depositAmount, setDepositAmount] = useState('')
   const [depositMethod, setDepositMethod] = useState('bank_transfer')
   const [depositProofUrl, setDepositProofUrl] = useState('')
+  const [depositProofFile, setDepositProofFile] = useState<File | null>(null)
 
   async function refresh() {
     if (!supabase) { setLoading(false); return }
@@ -584,11 +585,27 @@ function RequestManager() {
     if (!product) { setNotice('Pilih model produk yang valid.'); return }
     const amount = Number(depositAmount) || 0
     if (amount < 0) { setNotice('Nominal deposit tidak boleh negatif.'); return }
-    if (amount > 0 && depositMethod !== 'cash' && !depositProofUrl.trim()) {
-      setNotice('Masukkan URL bukti transfer untuk deposit non-tunai.')
+    if (amount > 0 && depositMethod !== 'cash' && !depositProofUrl.trim() && !depositProofFile) {
+      setNotice('Lampirkan bukti transfer atau masukkan URL bukti untuk deposit non-tunai.')
+      return
+    }
+    if (depositProofFile && (!['image/jpeg','image/png','image/webp','application/pdf'].includes(depositProofFile.type) || depositProofFile.size > 10 * 1024 * 1024)) {
+      setNotice('Bukti harus JPG, PNG, WebP, atau PDF dengan ukuran maksimal 10 MB.')
       return
     }
     setSaving(true); setNotice('')
+    let uploadedProofPath = ''
+    if (depositProofFile) {
+      const requestToken = crypto.randomUUID()
+      const safeName = depositProofFile.name.replace(/[^a-zA-Z0-9._-]/g, '-')
+      uploadedProofPath = 'requests/' + requestToken + '/' + safeName
+      const { error: uploadError } = await supabase.storage.from('payment-proofs').upload(uploadedProofPath, depositProofFile, {
+        upsert: false, contentType: depositProofFile.type, cacheControl: '3600',
+      })
+      if (uploadError) {
+        setSaving(false); setNotice('Bukti deposit gagal diunggah. Periksa bucket privat dan akses admin.'); return
+      }
+    }
     const { error } = await supabase.from('requests').insert({
       customer_name: customerName.trim(),
       customer_phone: phone.trim(),
@@ -597,16 +614,18 @@ function RequestManager() {
       requested_variant: variant.trim() || null,
       deposit_amount: amount,
       deposit_method: depositMethod,
-      deposit_proof_url: depositProofUrl.trim() || null,
+      deposit_proof_url: uploadedProofPath || depositProofUrl.trim() || null,
       deposit_payment_status: amount > 0 ? 'awaiting_verification' : 'not_received',
       status: 'new',
     })
     setSaving(false)
-    if (error) setNotice('Request gagal disimpan. Periksa data dan koneksi database.')
-    else {
+    if (error) {
+      if (uploadedProofPath) await supabase.storage.from('payment-proofs').remove([uploadedProofPath])
+      setNotice('Request gagal disimpan. Periksa data dan koneksi database.')
+    } else {
       setNotice('Request berhasil ditambahkan. Deposit menunggu verifikasi admin.')
       setCustomerName(''); setPhone(''); setProductId(''); setVariant('')
-      setDepositAmount(''); setDepositMethod('bank_transfer'); setDepositProofUrl('')
+      setDepositAmount(''); setDepositMethod('bank_transfer'); setDepositProofUrl(''); setDepositProofFile(null)
       await refresh()
     }
   }
@@ -660,7 +679,8 @@ function RequestManager() {
           <label>Warna / catatan<input value={variant} onChange={e => setVariant(e.target.value)} placeholder="Warna atau detail lain" /></label>
           <label>Deposit diterima (Rp)<input type="number" min="0" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} placeholder="Opsional, sesuai bukti" /></label>
           <label>Metode deposit<select value={depositMethod} onChange={e => setDepositMethod(e.target.value)}><option value="bank_transfer">Transfer bank</option><option value="qris">QRIS</option><option value="cash">Tunai</option><option value="shopee">Shopee</option></select></label>
-          <label className="request-proof-field">Link bukti transfer<input type="url" value={depositProofUrl} onChange={e => setDepositProofUrl(e.target.value)} placeholder="URL bukti (wajib untuk non-tunai)" /></label>
+          <label className="request-proof-field">Upload bukti transfer (JPG/PNG/WebP/PDF)<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={e => setDepositProofFile(e.target.files?.[0] || null)} /></label>
+          <label className="request-proof-field">Atau URL bukti eksternal<input type="url" value={depositProofUrl} onChange={e => setDepositProofUrl(e.target.value)} placeholder="https://..." /></label>
           <button className="button button-dark" disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan Request'}</button>
         </form>
       </div>
@@ -678,7 +698,7 @@ function RequestManager() {
                   <div className="request-deposit-meta">
                     <span className="status-pill status-muted">{depositLabels[String(request.deposit_payment_status)] || 'Status deposit'}</span>
                     <strong>{Number(request.deposit_amount) > 0 ? formatRupiah(Number(request.deposit_amount)) : 'Tanpa deposit tercatat'}</strong>
-                    {request.deposit_proof_url ? <a className="table-link" href={String(request.deposit_proof_url)} target="_blank" rel="noreferrer">Lihat bukti <ArrowUpRight size={12} /></a> : null}
+                    {request.deposit_proof_url ? <PrivateFileLink bucket="payment-proofs" path={String(request.deposit_proof_url)} label="Lihat bukti" /> : null}
                   </div>
                   {request.deposit_payment_status === 'awaiting_verification' ? (
                     <div className="request-review-actions">

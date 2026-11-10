@@ -398,7 +398,10 @@ begin
   end loop;
 
   v_jastip_fee := public.calculate_jastip_fee(v_product_count);
-  v_total := greatest(0, v_product_subtotal + v_jastip_fee + v_shipping_fee - v_discount);
+  if v_discount > (v_product_subtotal + v_jastip_fee + v_shipping_fee) then
+    raise exception 'Discount cannot exceed the order subtotal and fees' using errcode = '22023';
+  end if;
+  v_total := v_product_subtotal + v_jastip_fee + v_shipping_fee - v_discount;
   v_order_code := 'JN-' || to_char(now(), 'YYMMDD') || '-' || lpad(nextval('public.order_code_seq')::text, 6, '0');
 
   insert into public.orders (
@@ -410,7 +413,11 @@ begin
     v_checkout_method, nullif(p_payload ->> 'shopee_checkout_url', ''),
     v_product_subtotal, v_product_count, v_jastip_fee, v_shipping_fee,
     v_discount, v_total, 'awaiting_payment',
-    case when v_deposit > 0 then 'deposit_received' else 'unpaid' end,
+    case
+      when v_deposit >= v_total and v_total > 0 then 'paid'
+      when v_deposit > 0 then 'deposit_received'
+      else 'unpaid'
+    end,
     nullif(p_payload ->> 'admin_notes', '')
   ) returning id into v_order_id;
 

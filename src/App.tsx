@@ -557,6 +557,7 @@ function OrdersManager() {
     { key: 'item-1', productId: '', productName: '', variant: '', quantity: 1, unitPrice: '', unitId: '' },
   ])
   const [updatingOrder, setUpdatingOrder] = useState<string | null>(null)
+  const [shopeeUsernames, setShopeeUsernames] = useState<Record<string, string>>({})
 
   async function refresh() {
     if (!supabase) { setLoading(false); return }
@@ -653,6 +654,20 @@ function OrdersManager() {
     else { setNotice('Status order berhasil diperbarui.'); await refresh() }
   }
 
+  async function saveShopeeUsername(orderId: string, existingName: string) {
+    if (!supabase) return
+    const username = (shopeeUsernames[orderId] ?? existingName).trim()
+    if (!username) { setNotice('Isi nama akun Shopee yang sudah dikonfirmasi customer.'); return }
+    setUpdatingOrder(orderId); setNotice('')
+    const { error } = await supabase.from('orders').update({
+      shopee_username: username,
+      customer_shopee_confirmed_at: new Date().toISOString(),
+    }).eq('id', orderId)
+    setUpdatingOrder(null)
+    if (error) setNotice('Konfirmasi nama Shopee gagal disimpan.')
+    else { setNotice('Nama akun Shopee berhasil dicatat.'); await refresh() }
+  }
+
   const statuses = [
     ['awaiting_payment', 'Menunggu pembayaran'],
     ['deposit_received', 'Deposit diterima'],
@@ -737,7 +752,10 @@ function OrdersManager() {
             {orders.map(order => (
               <tr key={String(order.id)}>
                 <td><strong>{String(order.order_code)}</strong><small>{new Date(String(order.created_at)).toLocaleDateString('id-ID')} · {String(order.checkout_method)}</small></td>
-                <td><strong>{String(order.customer_name)}</strong><small>{String(order.customer_phone)}</small>{order.shopee_username ? <small>Shopee: {String(order.shopee_username)}</small> : null}</td>
+                <td>
+                  <strong>{String(order.customer_name)}</strong><small>{String(order.customer_phone)}</small>
+                  {order.checkout_method === 'shopee' ? <div className="shopee-confirm-field"><input aria-label="Nama akun Shopee customer" value={shopeeUsernames[String(order.id)] ?? String(order.shopee_username || '')} onChange={e => setShopeeUsernames(current => ({ ...current, [String(order.id)]: e.target.value }))} placeholder="Nama akun Shopee" /><button type="button" disabled={updatingOrder === String(order.id)} onClick={() => void saveShopeeUsername(String(order.id), String(order.shopee_username || ''))}>Simpan</button></div> : null}
+                </td>
                 <td>{String(order.product_count || 0)} produk<small>Fee {formatRupiah(Number(order.jastip_fee || 0))}</small></td>
                 <td>{formatRupiah(Number(order.total_amount))}</td>
                 <td><span className="status-pill status-muted">{String(order.payment_status)}</span></td>

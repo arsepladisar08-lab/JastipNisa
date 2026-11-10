@@ -4,7 +4,7 @@ import {
   ArrowDown, ArrowRight, ArrowUpRight, BadgeCheck, Banknote, Box, Check,
   ChevronDown, CircleHelp, Clock3, Instagram, LayoutDashboard, LockKeyhole,
   Menu, PackageCheck, Search, ShieldCheck, ShoppingBag, Sparkles, Truck,
-  Wallet, X,
+  Wallet, X, Plus, Trash2,
 } from 'lucide-react'
 import { initialCatalog, mapCatalogRow, OFFICIAL_CATALOG_URL, type CatalogProduct } from './data/catalog'
 import { calculateJastipFee, formatRupiah } from './lib/fees'
@@ -417,25 +417,223 @@ function RequestManager() {
   return <div className="admin-view"><div className="admin-section-intro"><div><span className="eyebrow">CUSTOMER WISHLIST</span><h2>Daftar request</h2><p>Catat barang yang dicari dan pantau progres pengecekan admin.</p></div></div>{notice && <div className="inline-notice">{notice}</div>}<div className="admin-panel add-product-panel"><div className="panel-heading"><div><span className="eyebrow">NEW REQUEST</span><h3>Catat request pelanggan</h3></div></div><form className="admin-inline-form request-form" onSubmit={createRequest}><label>Nama pelanggan<input required value={customerName} onChange={e => setCustomerName(e.target.value)} /></label><label>Nomor WhatsApp<input required value={phone} onChange={e => setPhone(e.target.value)} /></label><label>Model produk<select required value={productName} onChange={e => setProductName(e.target.value)}><option value="">Pilih model</option>{products.map(product => <option key={product.id} value={product.name}>{product.name}</option>)}</select></label><label>Warna / catatan<input value={variant} onChange={e => setVariant(e.target.value)} placeholder="Warna atau detail lain" /></label><button className="button button-dark" disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan Request'}</button></form></div><div className="admin-panel"><div className="panel-heading"><div><span className="eyebrow">REQUEST TRACKER</span><h3>{requests.length} request terbaru</h3></div></div>{loading ? <div className="admin-loading"><span className="spinner" /> Memuat request…</div> : requests.length ? <div className="request-list">{requests.map(request => <div className="request-row" key={String(request.id)}><div className="request-avatar">{String(request.customer_name || 'C').slice(0,1).toUpperCase()}</div><div className="request-detail"><strong>{String(request.requested_product_name)}</strong><span>{String(request.customer_name || 'Nama belum diisi')} · {String(request.customer_phone || 'No. HP belum diisi')}</span><small>{String(request.requested_variant || 'Varian belum ditentukan')} · {new Date(String(request.created_at)).toLocaleDateString('id-ID')}</small></div><select aria-label={`Status request ${String(request.requested_product_name)}`} value={String(request.status)} onChange={e => void updateStatus(String(request.id), e.target.value)}><option value="new">Baru</option><option value="deposit_received">Deposit diterima</option><option value="searching">Sedang dicari</option><option value="found">Ditemukan</option><option value="not_found">Tidak ditemukan</option><option value="converted">Menjadi order</option><option value="cancelled">Dibatalkan</option></select></div>)}</div> : <div className="empty-state"><CircleHelp size={24} /><strong>Belum ada request</strong><span>Request pelanggan yang dicatat akan tampil di sini.</span></div>}</div></div>
 }
 
+type OrderDraftItem = {
+  key: string
+  productId: string
+  productName: string
+  variant: string
+  quantity: number
+  unitPrice: string
+}
+
 function OrdersManager() {
   const [orders, setOrders] = useState<Record<string, unknown>[]>([])
+  const [products, setProducts] = useState<{ id: string; name: string; official_price: number | null }[]>([])
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
-  useEffect(() => {
-    let alive = true
-    async function load() {
-      if (!supabase) return
-      const { data, error } = await supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username').order('created_at', { ascending: false }).limit(100)
-      if (alive) {
-        if (error) setNotice('Gagal memuat data pesanan. Periksa migrasi database.')
-        else setOrders((data || []) as Record<string, unknown>[])
-        setLoading(false)
-      }
+  const [customerName, setCustomerName] = useState('')
+  const [customerPhone, setCustomerPhone] = useState('')
+  const [shippingAddress, setShippingAddress] = useState('')
+  const [shippingFee, setShippingFee] = useState('0')
+  const [discount, setDiscount] = useState('0')
+  const [depositAmount, setDepositAmount] = useState('')
+  const [checkoutMethod, setCheckoutMethod] = useState<'manual' | 'shopee'>('manual')
+  const [shopeeLink, setShopeeLink] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('bank_transfer')
+  const [items, setItems] = useState<OrderDraftItem[]>([
+    { key: 'item-1', productId: '', productName: '', variant: '', quantity: 1, unitPrice: '' },
+  ])
+  const [updatingOrder, setUpdatingOrder] = useState<string | null>(null)
+
+  async function refresh() {
+    if (!supabase) { setLoading(false); return }
+    const [orderResult, productResult] = await Promise.all([
+      supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username,shopee_checkout_url,product_count,jastip_fee,shipping_fee').order('created_at', { ascending: false }).limit(100),
+      supabase.from('catalog_products').select('id,name,official_price').eq('is_active', true).order('name'),
+    ])
+    if (orderResult.error) setNotice('Gagal memuat data pesanan. Periksa migrasi database dan RLS.')
+    else setOrders((orderResult.data || []) as Record<string, unknown>[])
+    if (!productResult.error) setProducts(productResult.data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { void refresh() }, [])
+
+  const productCount = items.reduce((sum, item) => sum + Math.max(0, Math.floor(item.quantity || 0)), 0)
+  const subtotal = items.reduce((sum, item) => sum + (Math.max(0, Math.floor(item.quantity || 0)) * Math.max(0, Number(item.unitPrice) || 0)), 0)
+  const jastipFee = calculateJastipFee(productCount)
+  const shipping = Math.max(0, Number(shippingFee) || 0)
+  const discountValue = Math.max(0, Number(discount) || 0)
+  const total = Math.max(0, subtotal + jastipFee + shipping - discountValue)
+
+  function updateItem(key: string, patch: Partial<OrderDraftItem>) {
+    setItems(current => current.map(item => item.key === key ? { ...item, ...patch } : item))
+  }
+
+  function addItem() {
+    setItems(current => [...current, {
+      key: 'item-' + Date.now() + '-' + current.length,
+      productId: '', productName: '', variant: '', quantity: 1, unitPrice: '',
+    }])
+  }
+
+  async function createOrder(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase) return
+    setNotice('')
+    if (!items.length || items.some(item => !item.productName || !Number(item.unitPrice) || Number(item.unitPrice) <= 0)) {
+      setNotice('Pilih model dan isi harga satuan yang sudah disepakati untuk setiap item.')
+      return
     }
-    void load()
-    return () => { alive = false }
-  }, [])
-  return <div className="admin-view"><div className="admin-section-intro"><div><span className="eyebrow">ORDER MANAGEMENT</span><h2>Pesanan pelanggan</h2><p>Daftar pesanan yang sudah dibuat admin setelah ketersediaan dan detail order dikonfirmasi.</p></div></div>{notice && <div className="inline-notice">{notice}</div>}<div className="admin-panel"><div className="panel-heading"><div><span className="eyebrow">ALL ORDERS</span><h3>{orders.length} pesanan</h3></div></div>{loading ? <div className="admin-loading"><span className="spinner" /> Memuat pesanan…</div> : orders.length ? <div className="table-wrap"><table><thead><tr><th>Order</th><th>Pelanggan</th><th>Total</th><th>Pembayaran</th><th>Status</th></tr></thead><tbody>{orders.map(order => <tr key={String(order.id)}><td><strong>{String(order.order_code)}</strong><small>{new Date(String(order.created_at)).toLocaleDateString('id-ID')}</small></td><td><strong>{String(order.customer_name)}</strong><small>{String(order.customer_phone)}</small></td><td>{formatRupiah(Number(order.total_amount))}</td><td><span className="status-pill status-muted">{String(order.payment_status)}</span></td><td><span className="status-pill status-active">{String(order.status)}</span></td></tr>)}</tbody></table></div> : <div className="empty-state"><PackageCheck size={24} /><strong>Belum ada pesanan</strong><span>Pesanan yang dicatat melalui alur admin akan muncul di sini.</span></div>}</div><div className="admin-inline-note"><Wallet size={17} /> Pencatatan pembayaran, deposit, refund dan pengiriman akan diaktifkan pada slice operasional berikutnya setelah aturan deposit final ditentukan.</div></div>
+    if (checkoutMethod === 'shopee' && !shopeeLink.trim()) {
+      setNotice('Masukkan link checkout Shopee yang diberikan admin.')
+      return
+    }
+    const deposit = Number(depositAmount) || 0
+    if (deposit < 0 || deposit > total) {
+      setNotice('Nominal deposit tidak boleh negatif atau melebihi total order.')
+      return
+    }
+    setSaving(true)
+    const payload = {
+      customer_name: customerName.trim(),
+      customer_phone: customerPhone.trim(),
+      shipping_address: shippingAddress.trim(),
+      checkout_method: checkoutMethod,
+      shopee_checkout_url: checkoutMethod === 'shopee' ? shopeeLink.trim() : null,
+      shipping_fee: shipping,
+      discount: discountValue,
+      deposit_amount: deposit,
+      payment_method: paymentMethod,
+      items: items.map(item => ({
+        product_id: item.productId || null,
+        product_name_snapshot: item.productName,
+        variant_snapshot: item.variant.trim() || null,
+        quantity: Math.max(1, Math.floor(item.quantity)),
+        unit_price: Number(item.unitPrice),
+      })),
+    }
+    const { data, error } = await supabase.rpc('create_order', { p_payload: payload })
+    setSaving(false)
+    if (error) {
+      setNotice('Order gagal dibuat. Pastikan migration terbaru sudah diterapkan dan data pesanan valid.')
+      return
+    }
+    const created = Array.isArray(data) ? data[0] : data
+    setNotice('Order ' + (created?.order_code || '') + ' berhasil dibuat. Fee dihitung ulang oleh database.')
+    setCustomerName(''); setCustomerPhone(''); setShippingAddress('')
+    setShippingFee('0'); setDiscount('0'); setDepositAmount('')
+    setCheckoutMethod('manual'); setShopeeLink('')
+    setItems([{ key: 'item-' + Date.now(), productId: '', productName: '', variant: '', quantity: 1, unitPrice: '' }])
+    await refresh()
+  }
+
+  async function changeOrderStatus(orderId: string, status: string) {
+    if (!supabase) return
+    setUpdatingOrder(orderId); setNotice('')
+    const { error } = await supabase.from('orders').update({ status }).eq('id', orderId)
+    setUpdatingOrder(null)
+    if (error) setNotice('Status order gagal diperbarui.')
+    else { setNotice('Status order berhasil diperbarui.'); await refresh() }
+  }
+
+  const statuses = [
+    ['awaiting_payment', 'Menunggu pembayaran'],
+    ['deposit_received', 'Deposit diterima'],
+    ['admin_searching', 'Admin mencari barang'],
+    ['awaiting_customer_details', 'Menunggu data customer'],
+    ['confirmed', 'Terkonfirmasi'],
+    ['packing', 'Packing'],
+    ['shipped', 'Dikirim'],
+    ['completed', 'Selesai'],
+    ['cancelled', 'Dibatalkan'],
+    ['issue', 'Ada kendala'],
+  ]
+
+  return (
+    <div className="admin-view">
+      <div className="admin-section-intro">
+        <div><span className="eyebrow">ORDER MANAGEMENT</span><h2>Pesanan pelanggan</h2><p>Buat order final setelah ketersediaan, foto aktual dan detail pelanggan dikonfirmasi.</p></div>
+      </div>
+      {notice && <div className="inline-notice">{notice}</div>}
+
+      <div className="admin-panel order-create-panel">
+        <div className="panel-heading"><div><span className="eyebrow">CREATE CONFIRMED ORDER</span><h3>Buat pesanan baru</h3></div></div>
+        <form className="order-form" onSubmit={createOrder}>
+          <div className="order-form-section">
+            <span className="order-form-label">01 · DATA PELANGGAN</span>
+            <div className="order-form-grid">
+              <label>Nama lengkap<input required value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Nama penerima" /></label>
+              <label>Nomor HP / WhatsApp<input required value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="08xxxxxxxxxx" /></label>
+              <label className="field-full">Alamat pengiriman<textarea required rows={2} value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} placeholder="Alamat lengkap, kecamatan, kota, kode pos" /></label>
+            </div>
+          </div>
+
+          <div className="order-form-section">
+            <div className="order-form-title"><span className="order-form-label">02 · ITEM PESANAN</span><button type="button" className="subtle-action" onClick={addItem}><Plus size={14} /> Tambah item</button></div>
+            <div className="order-items-editor">
+              {items.map((item, index) => (
+                <div className="order-item-editor" key={item.key}>
+                  <div className="order-item-index">0{index + 1}</div>
+                  <label className="order-product-select">Model katalog<select required value={item.productId} onChange={e => {
+                    const product = products.find(p => p.id === e.target.value)
+                    updateItem(item.key, { productId: e.target.value, productName: product?.name || '' })
+                  }}><option value="">Pilih model</option>{products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
+                  <label>Varian / warna<input value={item.variant} onChange={e => updateItem(item.key, { variant: e.target.value })} placeholder="Opsional" /></label>
+                  <label>Jumlah<input type="number" min="1" max="50" value={item.quantity} onChange={e => updateItem(item.key, { quantity: Math.max(1, Math.min(50, Number(e.target.value) || 1)) })} /></label>
+                  <label>Harga satuan (Rp)<input type="number" min="1" required value={item.unitPrice} onChange={e => updateItem(item.key, { unitPrice: e.target.value })} placeholder="Harga disepakati" /></label>
+                  <button type="button" className="remove-item" disabled={items.length === 1} onClick={() => setItems(current => current.filter(row => row.key !== item.key))} aria-label="Hapus item"><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+            <p className="order-helper">Harga katalog Flicka tidak otomatis dijadikan harga jual. Isi harga satuan sesuai kesepakatan final dengan customer.</p>
+          </div>
+
+          <div className="order-form-section">
+            <span className="order-form-label">03 · CHECKOUT & PEMBAYARAN</span>
+            <div className="order-form-grid">
+              <label>Jalur checkout<select value={checkoutMethod} onChange={e => setCheckoutMethod(e.target.value as 'manual' | 'shopee')}><option value="manual">Transfer langsung / manual</option><option value="shopee">Shopee</option></select></label>
+              {checkoutMethod === 'shopee' && <label>Link checkout Shopee<input required type="url" value={shopeeLink} onChange={e => setShopeeLink(e.target.value)} placeholder="https://shopee.co.id/..." /></label>}
+              <label>Ongkir (Rp)<input type="number" min="0" value={shippingFee} onChange={e => setShippingFee(e.target.value)} /></label>
+              <label>Diskon (Rp)<input type="number" min="0" value={discount} onChange={e => setDiscount(e.target.value)} /></label>
+              <label>Deposit diterima (Rp)<input type="number" min="0" max={total} value={depositAmount} onChange={e => setDepositAmount(e.target.value)} placeholder="Isi jika sudah diterima" /></label>
+              <label>Metode pembayaran<select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option value="bank_transfer">Transfer bank</option><option value="qris">QRIS</option><option value="cash">Tunai</option><option value="shopee">Shopee</option></select></label>
+            </div>
+            <p className="order-helper">Deposit dicatat sesuai nominal yang benar-benar diterima. Tidak ada nominal atau persentase deposit otomatis.</p>
+          </div>
+
+          <div className="order-total-panel">
+            <div><span>Jumlah produk</span><strong>{productCount}</strong></div>
+            <div><span>Subtotal barang</span><strong>{formatRupiah(subtotal)}</strong></div>
+            <div><span>Fee jastip</span><strong>{formatRupiah(jastipFee)}</strong></div>
+            <div><span>Ongkir − diskon</span><strong>{formatRupiah(shipping - discountValue)}</strong></div>
+            <div className="order-grand-total"><span>Total tagihan</span><strong>{formatRupiah(total)}</strong></div>
+          </div>
+          <div className="order-form-actions"><span>Order akan tersimpan bersama item dan catatan deposit sebagai satu transaksi database.</span><button className="button button-dark" disabled={saving || !products.length}>{saving ? 'Menyimpan order…' : 'Buat Order'} <ArrowRight size={15} /></button></div>
+        </form>
+      </div>
+
+      <div className="admin-panel">
+        <div className="panel-heading"><div><span className="eyebrow">ALL ORDERS</span><h3>{orders.length} pesanan tersimpan</h3></div></div>
+        {loading ? <div className="admin-loading"><span className="spinner" /> Memuat pesanan…</div> : orders.length ? (
+          <div className="table-wrap"><table><thead><tr><th>Order</th><th>Pelanggan</th><th>Jumlah</th><th>Total</th><th>Pembayaran</th><th>Status</th></tr></thead><tbody>
+            {orders.map(order => (
+              <tr key={String(order.id)}>
+                <td><strong>{String(order.order_code)}</strong><small>{new Date(String(order.created_at)).toLocaleDateString('id-ID')} · {String(order.checkout_method)}</small></td>
+                <td><strong>{String(order.customer_name)}</strong><small>{String(order.customer_phone)}</small>{order.shopee_username ? <small>Shopee: {String(order.shopee_username)}</small> : null}</td>
+                <td>{String(order.product_count || 0)} produk<small>Fee {formatRupiah(Number(order.jastip_fee || 0))}</small></td>
+                <td>{formatRupiah(Number(order.total_amount))}</td>
+                <td><span className="status-pill status-muted">{String(order.payment_status)}</span></td>
+                <td><select className="order-status-select" aria-label={`Status order ${String(order.order_code)}`} disabled={updatingOrder === String(order.id)} value={String(order.status)} onChange={e => void changeOrderStatus(String(order.id), e.target.value)}>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
+              </tr>
+            ))}
+          </tbody></table></div>
+        ) : <div className="empty-state"><PackageCheck size={24} /><strong>Belum ada pesanan</strong><span>Order final yang dibuat admin akan muncul di sini.</span></div>}
+      </div>
+      <div className="admin-inline-note"><Wallet size={17} /> Pembayaran deposit awal dapat dicatat saat membuat order. Pencatatan pelunasan/refund lanjutan dan pengelolaan resi akan ditambahkan pada slice berikutnya.</div>
+    </div>
+  )
 }
 
 function NotFound() {

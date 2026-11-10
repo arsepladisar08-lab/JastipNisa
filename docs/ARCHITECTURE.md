@@ -45,7 +45,7 @@ The current official source is https://www.flickabags.com/products. Seed data is
 
 ## Payment and order boundaries
 
-No payment gateway is enabled in this initial slice. The public journey instructs the customer to contact admin for deposit/payment details. Deposit amount, refund/carry-forward for unavailable requests, settlement deadline and complaint policy are open business decisions; never assume them in code. Shopee checkout is coordinated manually by admin and the buyer's Shopee username is recorded on the order in a later workflow slice.
+No payment gateway is enabled. The public journey instructs the customer to contact admin for deposit/payment details. Admin creates a confirmed order through an admin-only PostgreSQL RPC; the database recalculates the fee and atomically stores order items and the actual deposit entry, if supplied. A separate admin-only payment RPC records settlement, shipping and refund entries while recalculating the payment balance. Deposit amount, refund/carry-forward for unavailable requests, settlement deadline and complaint policy remain open business decisions; the system records actual figures entered by admin and does not infer a policy. Shopee checkout is coordinated manually by admin; the admin records the customer's confirmed Shopee username.
 
 ## Deployment/environment
 

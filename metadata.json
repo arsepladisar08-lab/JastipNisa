@@ -1,0 +1,8 @@
+{
+  "name": "JastipNisa",
+  "description": "Layanan jastip tas Flicka independen dengan alur katalog referensi, konfirmasi unit aktual via foto, dan manajemen pesanan.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

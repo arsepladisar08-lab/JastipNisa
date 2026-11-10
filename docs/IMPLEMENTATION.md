@@ -37,6 +37,8 @@ No substantial skill source file is vendored into this repository. This is a pro
 ### Slice 2 — Admin workspace and operations
 - [x] Private login route and profile-role gate.
 - [x] Admin dashboard, catalog management, physical unit registration, request tracker and order manager.
+- [x] Record the customer deposit and transfer proof at request stage; admin can verify or reject the proof.
+- [x] Convert a request only after it is marked found and its deposit is verified; the database transfers that deposit/proof into the order ledger exactly once.
 - [x] Register actual unit code, model/variant, price, condition, photo URL and stock status.
 - [x] Create confirmed orders through an admin-only PostgreSQL RPC; server recalculates fee and atomically stores items and an optional actual deposit.
 - [x] Reserve a selected physical unit in the same order transaction and validate that it matches the selected catalog product.
@@ -48,13 +50,13 @@ No substantial skill source file is vendored into this repository. This is a pro
 - [ ] Add private Supabase Storage upload for actual unit photos and payment-proof documents.
 
 ### Slice 3 — Further workflow refinement
-- [ ] Link request records directly to matched unit IDs and prefill final order data.
+- [ ] Link request records directly to matched physical unit IDs; current order creation pre-fills the customer/model/variant and transfers verified deposit from a found request.
 - [ ] Improve cancellation handling and unit-release/reassignment controls.
 - [ ] Add filters, pagination and report exports for large operational datasets.
 - [ ] Add a customer-facing order status page only after the admin workflow is stable.
 
 ### Slice 4 — Deployment and release verification
-- [x] Run GitHub Actions typecheck, fee unit tests and production build successfully (latest verified run: #36).
+- [x] Run GitHub Actions typecheck, fee unit tests and production build successfully on the previous toolchain (Run #39); current Node 22 / Vite 8 upgrade is being re-verified.
 - [ ] Apply migration and seed in a disposable Supabase project.
 - [ ] Verify anonymous/customer/admin RLS matrix and role-escalation denial against a live Supabase project.
 - [ ] Run browser journeys against configured Supabase.
@@ -63,4 +65,4 @@ No substantial skill source file is vendored into this repository. This is a pro
 
 ## Verification record
 
-The repository was empty before initialization. GitHub Actions run #36 passed dependency installation, TypeScript typecheck, unit tests and production build. This validates the frontend build and fee unit tests, but GitHub CI does not apply the Supabase migration or validate live RLS. No live Supabase project, admin account, WhatsApp number or Vercel deployment has been configured from this workspace yet.
+The repository was empty before initialization. GitHub Actions Runs #36 and #39 passed dependency installation, TypeScript typecheck, unit tests and production build on the initial toolchain. A later Node 22 / Vite 8 / React 19 / TypeScript 7 upgrade is under CI verification. GitHub CI does not apply the Supabase migration or validate live RLS. No live Supabase project, admin account, WhatsApp number or Vercel deployment has been configured from this workspace yet.

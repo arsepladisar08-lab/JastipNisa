@@ -659,3 +659,26 @@ drop trigger if exists guard_shopee_order_fulfillment on public.orders;
 create trigger guard_shopee_order_fulfillment
   before update of status on public.orders
   for each row execute function public.guard_shopee_order_fulfillment();
+
+
+-- Private file storage. Unit photos and customer payment proofs are not public.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values
+  ('unit-photos', 'unit-photos', false, 10485760, array['image/jpeg','image/png','image/webp']),
+  ('payment-proofs', 'payment-proofs', false, 10485760, array['image/jpeg','image/png','image/webp','application/pdf'])
+on conflict (id) do update set
+  public = false,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "JastipNisa admins manage private files" on storage.objects;
+create policy "JastipNisa admins manage private files"
+  on storage.objects for all to authenticated
+  using (
+    bucket_id in ('unit-photos', 'payment-proofs')
+    and public.is_admin()
+  )
+  with check (
+    bucket_id in ('unit-photos', 'payment-proofs')
+    and public.is_admin()
+  );

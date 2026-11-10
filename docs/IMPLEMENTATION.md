@@ -39,9 +39,13 @@ No substantial skill source file is vendored into this repository. This is a pro
 - [x] Admin dashboard, catalog, physical unit, request and order workspace.
 - [x] Admin creates confirmed orders through a PostgreSQL RPC that calculates the fee server-side and writes items plus optional received-deposit ledger row atomically.
 - [x] Admin can update the current order workflow status.
+- [x] Admin can register actual physical units, attach photo URLs and manage unit status.
+- [x] Admin can record deposit, settlement, shipping and refund ledger entries with proof URL references.
+- [x] Admin can record Shopee username confirmation and shipment courier/tracking/status.
+- [x] Admin can register operating expenses and review recorded totals.
 - [x] Admin records deposit, settlement, shipping and refund entries through an admin-only database RPC; order payment status is recalculated from the ledger.
 - [x] Admin can record Shopee username confirmation and update unit/order workflow statuses.
-- [ ] Add shipment tracking and expense management.
+- [ ] Add direct private Supabase Storage uploads for unit photos and payment proof documents.
 - [ ] Replace external photo/proof URL references with private Supabase Storage uploads and policies.
 
 ### Slice 3 — Operational workflow

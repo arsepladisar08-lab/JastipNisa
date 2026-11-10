@@ -562,6 +562,8 @@ function OrdersManager() {
   const [paymentType, setPaymentType] = useState<'deposit' | 'settlement' | 'shipping' | 'refund'>('settlement')
   const [paymentMethodEntry, setPaymentMethodEntry] = useState('bank_transfer')
   const [paymentNotes, setPaymentNotes] = useState('')
+  const [paymentProofUrl, setPaymentProofUrl] = useState('')
+  const [depositProofUrl, setDepositProofUrl] = useState('')
   const [shopeeUsernames, setShopeeUsernames] = useState<Record<string, string>>({})
 
   async function refresh() {
@@ -626,6 +628,7 @@ function OrdersManager() {
       discount: discountValue,
       deposit_amount: deposit,
       payment_method: paymentMethod,
+      payment_proof_url: depositProofUrl.trim() || null,
       items: items.map(item => ({
         product_id: item.productId || null,
         product_name_snapshot: item.productName,
@@ -644,7 +647,7 @@ function OrdersManager() {
     const created = Array.isArray(data) ? data[0] : data
     setNotice('Order ' + (created?.order_code || '') + ' berhasil dibuat. Fee dihitung ulang oleh database.')
     setCustomerName(''); setCustomerPhone(''); setShippingAddress('')
-    setShippingFee('0'); setDiscount('0'); setDepositAmount('')
+    setShippingFee('0'); setDiscount('0'); setDepositAmount(''); setDepositProofUrl('')
     setCheckoutMethod('manual'); setShopeeLink('')
     setItems([{ key: 'item-' + Date.now(), productId: '', productName: '', variant: '', quantity: 1, unitPrice: '', unitId: '' }])
     await refresh()
@@ -687,6 +690,7 @@ function OrdersManager() {
       p_payment_type: paymentType,
       p_method: paymentMethodEntry,
       p_notes: paymentNotes.trim() || null,
+      p_proof_url: paymentProofUrl.trim() || null,
     })
     setUpdatingOrder(null)
     if (error) {
@@ -694,7 +698,7 @@ function OrdersManager() {
       return
     }
     setNotice('Ledger pembayaran berhasil diperbarui.')
-    setPaymentOrderId(null); setPaymentAmount(''); setPaymentNotes('')
+    setPaymentOrderId(null); setPaymentAmount(''); setPaymentNotes(''); setPaymentProofUrl('')
     setPaymentType('settlement')
     await refresh()
   }
@@ -760,6 +764,7 @@ function OrdersManager() {
               <label>Ongkir (Rp)<input type="number" min="0" value={shippingFee} onChange={e => setShippingFee(e.target.value)} /></label>
               <label>Diskon (Rp)<input type="number" min="0" value={discount} onChange={e => setDiscount(e.target.value)} /></label>
               <label>Deposit diterima (Rp)<input type="number" min="0" max={total} value={depositAmount} onChange={e => setDepositAmount(e.target.value)} placeholder="Isi jika sudah diterima" /></label>
+              <label>Link bukti deposit (opsional)<input type="url" value={depositProofUrl} onChange={e => setDepositProofUrl(e.target.value)} placeholder="Link Drive / storage privat" /></label>
               <label>Metode pembayaran<select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option value="bank_transfer">Transfer bank</option><option value="qris">QRIS</option><option value="cash">Tunai</option><option value="shopee">Shopee</option></select></label>
             </div>
             <p className="order-helper">Deposit dicatat sesuai nominal yang benar-benar diterima. Tidak ada nominal atau persentase deposit otomatis.</p>
@@ -801,6 +806,7 @@ function OrdersManager() {
                     <select value={paymentType} onChange={e => setPaymentType(e.target.value as 'deposit' | 'settlement' | 'shipping' | 'refund')} aria-label="Jenis pembayaran"><option value="deposit">Deposit</option><option value="settlement">Pelunasan</option><option value="shipping">Ongkir</option><option value="refund">Refund</option></select>
                     <select value={paymentMethodEntry} onChange={e => setPaymentMethodEntry(e.target.value)} aria-label="Metode pembayaran"><option value="bank_transfer">Transfer bank</option><option value="qris">QRIS</option><option value="cash">Tunai</option><option value="shopee">Shopee</option></select>
                     <input value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} placeholder="Catatan (opsional)" aria-label="Catatan pembayaran" />
+                    <input type="url" value={paymentProofUrl} onChange={e => setPaymentProofUrl(e.target.value)} placeholder="Link bukti (opsional)" aria-label="Link bukti pembayaran" />
                     <button type="button" disabled={updatingOrder === String(order.id)} onClick={() => void recordPayment(String(order.id))}>Simpan</button>
                     <button type="button" onClick={() => setPaymentOrderId(null)}>Batal</button>
                   </div> : <button type="button" className="small-action" onClick={() => { setPaymentOrderId(String(order.id)); setPaymentAmount(''); setPaymentNotes('') }}>Catat pembayaran</button>}

@@ -288,7 +288,7 @@ function AdminGuard({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
-type AdminTab = 'overview' | 'catalog' | 'units' | 'requests' | 'orders'
+type AdminTab = 'overview' | 'catalog' | 'units' | 'requests' | 'orders' | 'expenses'
 
 function AdminShell() {
   const navigate = useNavigate()
@@ -302,10 +302,11 @@ function AdminShell() {
     { id: 'units', label: 'Unit Fisik', icon: <Box size={17} /> },
     { id: 'requests', label: 'Request', icon: <CircleHelp size={17} /> },
     { id: 'orders', label: 'Pesanan', icon: <PackageCheck size={17} /> },
+    { id: 'expenses', label: 'Pengeluaran', icon: <Banknote size={17} /> },
   ]
   return <div className="admin-app">
     <aside className="admin-sidebar"><Link to="/" className="brand"><span className="brand-mark"><ShoppingBag size={18} /></span><span>jastip<span className="brand-script">nisa.</span></span></Link><span className="sidebar-label">WORKSPACE</span><nav>{navItems.map(item => <button key={item.id} className={tab === item.id ? 'admin-nav-item active' : 'admin-nav-item'} onClick={() => setTab(item.id)}>{item.icon}{item.label}</button>)}</nav><div className="sidebar-bottom"><div className="admin-avatar">N</div><div><strong>Admin</strong><small>{email}</small></div><button onClick={signOut} className="signout-button" aria-label="Keluar"><ArrowUpRight size={16} /></button></div></aside>
-    <main className="admin-main"><header className="admin-topbar"><div><span className="eyebrow">JASTIPNISA / ADMIN</span><h1>{navItems.find(item => item.id === tab)?.label}</h1></div><Link to="/" target="_blank" className="view-public">Lihat halaman publik <ArrowUpRight size={15} /></Link></header><div className="admin-content">{tab === 'overview' && <Overview setTab={setTab} />}{tab === 'catalog' && <CatalogManager />}{tab === 'units' && <UnitsManager />}{tab === 'requests' && <RequestManager />}{tab === 'orders' && <OrdersManager />}</div></main>
+    <main className="admin-main"><header className="admin-topbar"><div><span className="eyebrow">JASTIPNISA / ADMIN</span><h1>{navItems.find(item => item.id === tab)?.label}</h1></div><Link to="/" target="_blank" className="view-public">Lihat halaman publik <ArrowUpRight size={15} /></Link></header><div className="admin-content">{tab === 'overview' && <Overview setTab={setTab} />}{tab === 'catalog' && <CatalogManager />}{tab === 'units' && <UnitsManager />}{tab === 'requests' && <RequestManager />}{tab === 'orders' && <OrdersManager />}{tab === 'expenses' && <ExpensesManager />}</div></main>
   </div>
 }
 
@@ -885,6 +886,81 @@ function OrdersManager() {
         ) : <div className="empty-state"><PackageCheck size={24} /><strong>Belum ada pesanan</strong><span>Order final yang dibuat admin akan muncul di sini.</span></div>}
       </div>
       <div className="admin-inline-note"><Wallet size={17} /> Pembayaran deposit awal dapat dicatat saat membuat order. Pencatatan pelunasan/refund lanjutan dan pengelolaan resi akan ditambahkan pada slice berikutnya.</div>
+    </div>
+  )
+}
+
+
+function ExpensesManager() {
+  const [expenses, setExpenses] = useState<Record<string, unknown>[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [category, setCategory] = useState('transport')
+  const [description, setDescription] = useState('')
+  const [amount, setAmount] = useState('')
+  const [occurredAt, setOccurredAt] = useState(new Date().toISOString().slice(0, 10))
+
+  async function refresh() {
+    if (!supabase) { setLoading(false); return }
+    const { data, error } = await supabase.from('expenses').select('id,category,description,amount,occurred_at,created_at').order('occurred_at', { ascending: false }).limit(300)
+    if (error) setNotice('Gagal memuat pengeluaran. Periksa migration dan kebijakan database.')
+    else setExpenses((data || []) as Record<string, unknown>[])
+    setLoading(false)
+  }
+
+  useEffect(() => { void refresh() }, [])
+
+  async function addExpense(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase) return
+    const numericAmount = Number(amount)
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setNotice('Nominal pengeluaran harus lebih dari nol.')
+      return
+    }
+    setSaving(true); setNotice('')
+    const { error } = await supabase.from('expenses').insert({
+      category, description: description.trim() || null,
+      amount: numericAmount, occurred_at: occurredAt,
+    })
+    setSaving(false)
+    if (error) setNotice('Pengeluaran gagal disimpan.')
+    else {
+      setNotice('Pengeluaran berhasil dicatat.')
+      setDescription(''); setAmount(''); await refresh()
+    }
+  }
+
+  const total = expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0)
+  const categories: Record<string,string> = {
+    transport: 'Transportasi', parking: 'Parkir', food: 'Makan', packing: 'Packing',
+    shipping: 'Ongkir dibayar', other: 'Lainnya',
+  }
+
+  return (
+    <div className="admin-view">
+      <div className="admin-section-intro"><div><span className="eyebrow">OPERATING COSTS</span><h2>Pengeluaran operasional</h2><p>Catat biaya transport, parkir, makan, packing, ongkir yang dibayar admin dan biaya lainnya.</p></div></div>
+      {notice && <div className="inline-notice">{notice}</div>}
+      <div className="expense-summary"><span className="eyebrow">TOTAL PENGELUARAN TERCATAT</span><strong>{formatRupiah(total)}</strong><small>{expenses.length} catatan pengeluaran</small></div>
+      <div className="admin-panel add-product-panel">
+        <div className="panel-heading"><div><span className="eyebrow">NEW EXPENSE</span><h3>Tambah pengeluaran</h3></div></div>
+        <form className="admin-inline-form expense-form" onSubmit={addExpense}>
+          <label>Kategori<select value={category} onChange={e => setCategory(e.target.value)}>{Object.entries(categories).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label>Nominal (Rp)<input type="number" min="1" required value={amount} onChange={e => setAmount(e.target.value)} placeholder="Contoh: 25000" /></label>
+          <label>Tanggal<input type="date" required value={occurredAt} onChange={e => setOccurredAt(e.target.value)} /></label>
+          <label>Keterangan<input value={description} onChange={e => setDescription(e.target.value)} placeholder="Detail pengeluaran" /></label>
+          <button className="button button-dark" disabled={saving}>{saving ? 'Menyimpan…' : 'Catat biaya'}</button>
+        </form>
+      </div>
+      <div className="admin-panel">
+        <div className="panel-heading"><div><span className="eyebrow">EXPENSE LEDGER</span><h3>Riwayat pengeluaran</h3></div></div>
+        {loading ? <div className="admin-loading"><span className="spinner" /> Memuat pengeluaran…</div> : expenses.length ? (
+          <div className="table-wrap"><table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th></tr></thead><tbody>
+            {expenses.map(expense => <tr key={String(expense.id)}><td>{new Date(String(expense.occurred_at) + 'T00:00:00').toLocaleDateString('id-ID')}</td><td><span className="status-pill status-muted">{categories[String(expense.category)] || String(expense.category)}</span></td><td>{String(expense.description || '—')}</td><td><strong>{formatRupiah(Number(expense.amount))}</strong></td></tr>)}
+          </tbody></table></div>
+        ) : <div className="empty-state"><Banknote size={24} /><strong>Belum ada pengeluaran</strong><span>Biaya operasional yang dicatat akan muncul di sini.</span></div>}
+      </div>
     </div>
   )
 }

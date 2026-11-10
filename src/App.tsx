@@ -412,6 +412,7 @@ function UnitsManager() {
   const [purchasePrice, setPurchasePrice] = useState('')
   const [sellingPrice, setSellingPrice] = useState('')
   const [photoUrl, setPhotoUrl] = useState('')
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [conditionNotes, setConditionNotes] = useState('')
 
   async function refresh() {
@@ -432,6 +433,9 @@ function UnitsManager() {
     event.preventDefault()
     if (!supabase) return
     if (!productId) { setNotice('Pilih model katalog terlebih dahulu.'); return }
+    if (photoFile && (!['image/jpeg','image/png','image/webp'].includes(photoFile.type) || photoFile.size > 10 * 1024 * 1024)) {
+      setNotice('Foto harus JPG, PNG, atau WebP dengan ukuran maksimal 10 MB.'); return
+    }
     setSaving(true); setNotice('')
     const generatedCode = unitCode.trim() || (
       'JN-' + new Date().toISOString().slice(2, 10).replace(/-/g, '') +
@@ -454,22 +458,38 @@ function UnitsManager() {
         variantId = newVariant.id
       }
     }
+    let uploadedPhotoPath = ''
+    let photoPath = photoUrl.trim()
+    if (photoFile) {
+      const safeName = photoFile.name.replace(/[^a-zA-Z0-9._-]/g, '-')
+      uploadedPhotoPath = 'units/' + generatedCode + '/' + crypto.randomUUID() + '-' + safeName
+      const { error: uploadError } = await supabase.storage.from('unit-photos').upload(uploadedPhotoPath, photoFile, {
+        upsert: false, contentType: photoFile.type, cacheControl: '3600',
+      })
+      if (uploadError) {
+        setSaving(false); setNotice('Foto gagal diunggah. Periksa bucket privat dan akses admin.'); return
+      }
+      photoPath = uploadedPhotoPath
+    }
     const { error } = await supabase.from('units').insert({
       unit_code: generatedCode,
       product_id: productId,
       variant_id: variantId,
       purchase_price: purchasePrice ? Number(purchasePrice) : null,
       selling_price: sellingPrice ? Number(sellingPrice) : null,
-      actual_photo_urls: photoUrl.trim() ? [photoUrl.trim()] : [],
+      actual_photo_urls: photoPath ? [photoPath] : [],
       condition_notes: conditionNotes.trim() || null,
       status: 'available',
       purchased_at: new Date().toISOString().slice(0, 10),
     })
     setSaving(false)
-    if (error) setNotice(error.message.includes('duplicate') ? 'Kode unit sudah digunakan. Buat kode lain.' : 'Unit gagal disimpan. Periksa data dan koneksi database.')
+    if (error) {
+      if (uploadedPhotoPath) await supabase.storage.from('unit-photos').remove([uploadedPhotoPath])
+      setNotice(error.message.includes('duplicate') ? 'Kode unit sudah digunakan. Buat kode lain.' : 'Unit gagal disimpan. Periksa data dan koneksi database.')
+    }
     else {
       setNotice('Unit fisik berhasil dicatat dengan status tersedia.')
-      setProductId(''); setVariant(''); setUnitCode(''); setPurchasePrice(''); setSellingPrice(''); setPhotoUrl(''); setConditionNotes('')
+      setProductId(''); setVariant(''); setUnitCode(''); setPurchasePrice(''); setSellingPrice(''); setPhotoUrl(''); setPhotoFile(null); setConditionNotes('')
       await refresh()
     }
   }
@@ -498,11 +518,12 @@ function UnitsManager() {
           <label>Varian / warna<input value={variant} onChange={e => setVariant(e.target.value)} placeholder="Contoh: Black, Ivory" /></label>
           <label>Harga beli (Rp)<input type="number" min="0" value={purchasePrice} onChange={e => setPurchasePrice(e.target.value)} placeholder="Modal aktual" /></label>
           <label>Harga jual disepakati (Rp)<input type="number" min="0" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} placeholder="Harga ke customer" /></label>
-          <label className="unit-photo-field">URL foto aktual<input type="url" value={photoUrl} onChange={e => setPhotoUrl(e.target.value)} placeholder="Link foto unit dari Drive / storage" /></label>
+          <label className="unit-photo-field">Upload foto unit (JPG/PNG/WebP, maks. 10 MB)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setPhotoFile(e.target.files?.[0] || null)} /></label>
+          <label className="unit-photo-link-field">Atau URL foto eksternal<input type="url" value={photoUrl} onChange={e => setPhotoUrl(e.target.value)} placeholder="https://..." /></label>
           <label className="unit-condition-field">Catatan kondisi<textarea rows={2} value={conditionNotes} onChange={e => setConditionNotes(e.target.value)} placeholder="Kondisi, defect minor, detail yang perlu diketahui customer" /></label>
           <button className="button button-dark" disabled={saving || !products.length}>{saving ? 'Menyimpan…' : 'Simpan Unit'}</button>
         </form>
-        <p className="order-helper unit-helper">Simpan URL foto yang dapat diakses admin/customer sesuai kebutuhan. Upload foto privat langsung dari perangkat belum diaktifkan pada slice ini.</p>
+        <p className="order-helper unit-helper">Foto yang diunggah disimpan di bucket privat dan hanya dapat dibuka admin melalui signed URL sementara.</p>
       </div>
       <div className="admin-panel">
         <div className="panel-heading"><div><span className="eyebrow">UNIT TRACKER</span><h3>{units.length} unit tercatat</h3></div></div>
@@ -516,7 +537,7 @@ function UnitsManager() {
                 <td><strong>{product?.name || 'Model tidak tersedia'}</strong><small>{String((unit.catalog_variants as { name?: string } | null)?.name || 'Varian belum dicatat')}</small></td>
                 <td>{unit.purchase_price == null ? '—' : formatRupiah(Number(unit.purchase_price))}</td>
                 <td>{unit.selling_price == null ? '—' : formatRupiah(Number(unit.selling_price))}</td>
-                <td>{photo ? <a className="table-link" href={photo} target="_blank" rel="noreferrer">Lihat foto <ArrowUpRight size={12} /></a> : 'Belum ada foto'}<small>{String(unit.condition_notes || 'Tanpa catatan kondisi')}</small></td>
+                <td>{photo ? <PrivateFileLink bucket="unit-photos" path={photo} label="Lihat foto" /> : 'Belum ada foto'}<small>{String(unit.condition_notes || 'Tanpa catatan kondisi')}</small></td>
                 <td><select className="order-status-select" value={String(unit.status)} onChange={e => void changeUnitStatus(String(unit.id), e.target.value)}>{Object.entries(statusLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></td>
               </tr>
             })}

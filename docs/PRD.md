@@ -54,8 +54,10 @@ The public landing page is the default entry point. Admin tools exist at a direc
 1. Admin signs in at `/admin/login`.
 2. The application confirms a valid Supabase session and admin role.
 3. Admin views key counters and recent requests/orders.
-4. Admin maintains catalog reference records and request/order statuses.
-5. Admin records payments and shipping data in later vertical slices.
+4. Admin records the request and customer-provided deposit amount/proof, then verifies the deposit.
+5. Admin searches for the product, sends actual unit photos and marks the request found when available.
+6. Admin creates the final order from the verified/found request; the database transfers the same deposit into the order ledger once.
+7. Admin manages order status, Shopee username confirmation, payment/refund entries, shipment and expenses.
 
 ## 6. Confirmed business rules
 
@@ -102,7 +104,7 @@ The public landing page is the default entry point. Admin tools exist at a direc
 | ADM-02 | P0 | Admin authorization | Non-admin and anonymous actors cannot access admin data |
 | ADM-03 | P1 | Dashboard summary | Shows counts from persisted records, with clear empty state |
 | ADM-04 | P1 | Catalog management | Admin can create/update/activate reference products |
-| ADM-05 | P1 | Requests and orders | Admin can review requests, create confirmed orders, and update permitted workflow statuses |
+| ADM-05 | P1 | Requests and orders | Admin can record and verify request-stage deposits, review requests, convert verified/found requests into confirmed orders, and update permitted workflow statuses |
 | ADM-06 | P1 | Physical units | Admin can record actual unit code, model/variant, purchase/selling price, condition, actual photo URL and stock status |
 | ADM-07 | P1 | Payment ledger | Admin can record an actual deposit, settlement, shipping payment or refund; database recalculates net paid and balance |
 | ADM-08 | P1 | Shipment handling | Admin can record courier, tracking number and fulfillment state; processing estimate is 2–3 business days |
@@ -118,4 +120,4 @@ Customer name, WhatsApp number, address, payment proof and Shopee username are p
 
 ## 10. Initial release boundary
 
-This first implementation establishes the public storefront, fee calculator, admin authentication gate, catalog references, request and physical-unit management, confirmed order creation, payment/refund ledger, Shopee username confirmation, shipment tracking and expense ledger. Payment gateway automation, private file uploads, direct request-to-unit matching, advanced reporting and live deployment remain incomplete until configured and verified.
+This first implementation establishes the public storefront, fee calculator, admin authentication gate, catalog references, request-stage deposit capture/verification, physical-unit management, verified request-to-order conversion with one-time deposit transfer, payment/refund ledger, Shopee username confirmation, shipment tracking and expense ledger. Payment gateway automation, private file uploads, direct request-to-unit matching, advanced reporting and live deployment remain incomplete until configured and verified.

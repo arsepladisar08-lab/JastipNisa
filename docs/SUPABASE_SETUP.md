@@ -55,4 +55,4 @@ Use a disposable project and Supabase SQL/editor/API testing to validate both al
 
 ## 7. Storage
 
-Actual unit photos and payment evidence should use private Storage buckets with admin-only policies before upload UI is implemented. Do not use public buckets for addresses, payment proofs or private order documents.
+The initial migration provisions private `unit-photos` and `payment-proofs` buckets (10 MB max, image types plus PDF for payment proofs) with admin-only `storage.objects` policies. The admin UI uploads actual unit photos, request-stage deposits, order deposits and payment/refund proofs; signed URLs expire after one hour. Never use public buckets for these files.

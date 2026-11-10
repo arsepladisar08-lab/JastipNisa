@@ -102,7 +102,11 @@ The public landing page is the default entry point. Admin tools exist at a direc
 | ADM-02 | P0 | Admin authorization | Non-admin and anonymous actors cannot access admin data |
 | ADM-03 | P1 | Dashboard summary | Shows counts from persisted records, with clear empty state |
 | ADM-04 | P1 | Catalog management | Admin can create/update/activate reference products |
-| ADM-05 | P1 | Requests and orders | Admin can review persisted requests/orders and update permitted workflow statuses |
+| ADM-05 | P1 | Requests and orders | Admin can review requests, create confirmed orders, and update permitted workflow statuses |
+| ADM-06 | P1 | Physical units | Admin can record actual unit code, model/variant, purchase/selling price, condition, actual photo URL and stock status |
+| ADM-07 | P1 | Payment ledger | Admin can record an actual deposit, settlement, shipping payment or refund; database recalculates net paid and balance |
+| ADM-08 | P1 | Shipment handling | Admin can record courier, tracking number and fulfillment state; processing estimate is 2–3 business days |
+| ADM-09 | P1 | Expense ledger | Admin can record operating expenses by category and review the recorded total |
 | DATA-01 | P0 | Database policies | RLS denies private table access to anonymous/non-admin clients |
 | DATA-02 | P0 | Secrets | No service-role key or privileged secret is shipped to browser code |
 | UX-01 | P0 | Responsive and accessible | Keyboard, focus, labels, reduced motion and narrow viewport support |

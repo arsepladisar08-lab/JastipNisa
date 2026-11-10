@@ -24,7 +24,7 @@ The source repository is greenfield/empty. React + Vite + Supabase + Vercel is s
 - `catalog_variants`: official color/variant reference, separate from owned units.
 - `units`: physical units acquired by JastipNisa, with actual photos, condition notes and inventory status.
 - `buyers`: private customer identity/contact/address.
-- `requests`: customer requested models/variants and admin matching status.
+- `requests`: customer requested models/variants, request-stage deposit amount/method/proof/status, and admin matching status.
 - `orders` + `order_items`: confirmed transaction and product lines.
 - `payments`: payment ledger including deposit/payment evidence metadata.
 - `shipments`: courier, tracking and fulfillment data.
@@ -45,7 +45,7 @@ The current official source is https://www.flickabags.com/products. Seed data is
 
 ## Payment and order boundaries
 
-No payment gateway is enabled. The public journey instructs the customer to contact admin for deposit/payment details. Admin creates a confirmed order through an admin-only PostgreSQL RPC; the database recalculates the fee and atomically stores order items and the actual deposit entry, if supplied. A separate admin-only payment RPC records settlement, shipping and refund entries while recalculating the payment balance. Deposit amount, refund/carry-forward for unavailable requests, settlement deadline and complaint policy remain open business decisions; the system records actual figures entered by admin and does not infer a policy. Shopee checkout is coordinated manually by admin; the admin records the customer's confirmed Shopee username.
+No payment gateway is enabled. The public journey instructs the customer to contact admin for deposit/payment details. Admin can record and verify a deposit while the request is still being searched. After the request is marked found, an admin-only PostgreSQL RPC converts it to an order, checks the request deposit, locks the source request, recalculates the fee and atomically stores order items plus the existing deposit entry. The request is marked applied/converted so the same deposit cannot be transferred twice. A separate admin-only payment RPC records settlement, shipping and refund entries while recalculating the payment balance. Deposit amount, refund/carry-forward for unavailable requests, settlement deadline and complaint policy remain open business decisions; the system records actual figures entered by admin and does not infer a policy. Shopee checkout is coordinated manually by admin; the admin records the customer's confirmed Shopee username.
 
 ## Deployment/environment
 
@@ -64,4 +64,4 @@ Never expose:
 
 ## Known limitations in the initial slice
 
-No automatic catalog sync, payment integration, customer login, private photo upload, shipping API, or complete order/payment/stock CRUD until the corresponding vertical slices and end-to-end tests are implemented.
+No automatic catalog sync, payment gateway, customer login, direct private photo/payment-proof upload, shipping API integration, direct request-to-physical-unit link, advanced reporting or customer self-service order portal is included yet. Core admin request/deposit verification, unit registration, order creation/conversion, payment/refund ledger, shipment tracking and expense flows exist in the UI and schema but still require a configured Supabase project and live RLS verification.

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import { Link, NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import {
   ArrowDown, ArrowRight, ArrowUpRight, BadgeCheck, Banknote, Box, Check,
-  ChevronDown, CircleHelp, Clock3, Instagram, LayoutDashboard, LockKeyhole,
+  ChevronDown, CircleHelp, Clock3, LayoutDashboard, LockKeyhole,
   Menu, PackageCheck, Search, ShieldCheck, ShoppingBag, Sparkles, Truck,
   Wallet, X, Plus, Trash2,
 } from 'lucide-react'

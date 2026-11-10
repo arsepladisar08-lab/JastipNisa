@@ -78,7 +78,7 @@ function PrivateFileLink({ bucket, path, label }: { bucket: 'unit-photos' | 'pay
   const [loading, setLoading] = useState(false)
   useEffect(() => {
     let alive = true
-    if (/^https?:\\/\\//i.test(path)) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
       setUrl(path)
       return () => { alive = false }
     }

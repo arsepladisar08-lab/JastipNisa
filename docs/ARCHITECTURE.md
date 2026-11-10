@@ -64,4 +64,4 @@ Never expose:
 
 ## Known limitations in the initial slice
 
-No automatic catalog sync, payment gateway, customer login, direct private photo/payment-proof upload, shipping API integration, direct request-to-physical-unit link, advanced reporting or customer self-service order portal is included yet. Core admin request/deposit verification, unit registration, order creation/conversion, payment/refund ledger, shipment tracking and expense flows exist in the UI and schema but still require a configured Supabase project and live RLS verification.
+No automatic catalog sync, payment gateway, customer login, shipping API integration, direct request-to-physical-unit link, advanced reporting or customer self-service order portal is included yet. Private unit-photo and payment-proof upload is implemented using private Storage buckets and expiring signed URLs. Core admin request/deposit verification, unit registration, order creation/conversion, payment/refund ledger, shipment tracking and expense flows exist in the UI and schema but still require a configured Supabase project and live RLS verification.

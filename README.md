@@ -36,7 +36,17 @@ Initial foundation / Phase 0.1. Public landing page and catalog shell are being 
 
 ## Local development
 
-Copy `.env.example` to `.env.local`, fill in Supabase project URL and publishable/anon key, then install dependencies and start Vite.
+1. Install Node.js 20+.
+2. Copy `.env.example` to `.env.local` and fill in Supabase project URL and anon/publishable key.
+3. Run `npm install`.
+4. Apply `supabase/migrations/202611110001_initial_schema.sql` in a development Supabase project.
+5. Run `supabase/seed.sql` to load the 12 official catalog reference models.
+6. Create the intended admin account in Supabase Auth, then promote its profile using the commented bootstrap SQL at the bottom of the migration.
+7. Run `npm run dev`.
+
+Before building: `npm run typecheck`, `npm test`, and `npm run build`.
+
+Set `VITE_ADMIN_WHATSAPP` to the admin's WhatsApp number in international digits (for example 62... without plus sign).
 
 No privileged service-role key belongs in browser environment variables.
 

@@ -643,7 +643,7 @@ function RequestManager() {
                   ) : null}
                 </div>
                 <select aria-label={`Status request ${String(request.requested_product_name)}`} disabled={updating === String(request.id)} value={String(request.status)} onChange={e => void updateStatus(String(request.id), e.target.value)}>
-                  <option value="new">Baru</option><option value="deposit_received">Deposit diterima</option><option value="searching">Sedang dicari</option><option value="found">Ditemukan</option><option value="not_found">Tidak ditemukan</option><option value="converted">Menjadi order</option><option value="cancelled">Dibatalkan</option>
+                  <option value="new">Baru</option><option value="deposit_received">Deposit diterima</option><option value="searching">Sedang dicari</option><option value="found">Ditemukan</option><option value="not_found">Tidak ditemukan</option><option value="cancelled">Dibatalkan</option>
                 </select>
               </div>
             ))}

@@ -47,7 +47,7 @@ No substantial skill source file is vendored into this repository. This is a pro
 - [x] Record Shopee checkout URL and confirmed Shopee username.
 - [x] Record courier, tracking number and shipment state.
 - [x] Record operating expenses and review the recorded total.
-- [ ] Add private Supabase Storage upload for actual unit photos and payment-proof documents.
+- [x] Upload unit photos, request-stage deposit proofs, order deposit proofs and payment/refund proofs to private Supabase Storage; admin previews use one-hour signed URLs.
 
 ### Slice 3 — Further workflow refinement
 - [ ] Link request records directly to matched physical unit IDs; current order creation pre-fills the customer/model/variant and transfers verified deposit from a found request.

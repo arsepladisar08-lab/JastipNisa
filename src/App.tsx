@@ -288,7 +288,7 @@ function AdminGuard({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
-type AdminTab = 'overview' | 'catalog' | 'requests' | 'orders'
+type AdminTab = 'overview' | 'catalog' | 'units' | 'requests' | 'orders'
 
 function AdminShell() {
   const navigate = useNavigate()
@@ -299,12 +299,13 @@ function AdminShell() {
   const navItems: { id: AdminTab; label: string; icon: ReactNode }[] = [
     { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={17} /> },
     { id: 'catalog', label: 'Katalog', icon: <ShoppingBag size={17} /> },
+    { id: 'units', label: 'Unit Fisik', icon: <Box size={17} /> },
     { id: 'requests', label: 'Request', icon: <CircleHelp size={17} /> },
     { id: 'orders', label: 'Pesanan', icon: <PackageCheck size={17} /> },
   ]
   return <div className="admin-app">
     <aside className="admin-sidebar"><Link to="/" className="brand"><span className="brand-mark"><ShoppingBag size={18} /></span><span>jastip<span className="brand-script">nisa.</span></span></Link><span className="sidebar-label">WORKSPACE</span><nav>{navItems.map(item => <button key={item.id} className={tab === item.id ? 'admin-nav-item active' : 'admin-nav-item'} onClick={() => setTab(item.id)}>{item.icon}{item.label}</button>)}</nav><div className="sidebar-bottom"><div className="admin-avatar">N</div><div><strong>Admin</strong><small>{email}</small></div><button onClick={signOut} className="signout-button" aria-label="Keluar"><ArrowUpRight size={16} /></button></div></aside>
-    <main className="admin-main"><header className="admin-topbar"><div><span className="eyebrow">JASTIPNISA / ADMIN</span><h1>{navItems.find(item => item.id === tab)?.label}</h1></div><Link to="/" target="_blank" className="view-public">Lihat halaman publik <ArrowUpRight size={15} /></Link></header><div className="admin-content">{tab === 'overview' && <Overview setTab={setTab} />}{tab === 'catalog' && <CatalogManager />}{tab === 'requests' && <RequestManager />}{tab === 'orders' && <OrdersManager />}</div></main>
+    <main className="admin-main"><header className="admin-topbar"><div><span className="eyebrow">JASTIPNISA / ADMIN</span><h1>{navItems.find(item => item.id === tab)?.label}</h1></div><Link to="/" target="_blank" className="view-public">Lihat halaman publik <ArrowUpRight size={15} /></Link></header><div className="admin-content">{tab === 'overview' && <Overview setTab={setTab} />}{tab === 'catalog' && <CatalogManager />}{tab === 'units' && <UnitsManager />}{tab === 'requests' && <RequestManager />}{tab === 'orders' && <OrdersManager />}</div></main>
   </div>
 }
 
@@ -371,6 +372,115 @@ function CatalogManager() {
     else { setNotice('Status katalog diperbarui.'); await refresh() }
   }
   return <div className="admin-view"><div className="admin-section-intro"><div><span className="eyebrow">PRODUCT REFERENCES</span><h2>Model katalog Flicka</h2><p>Data katalog resmi terpisah dari unit fisik yang berhasil dibeli.</p></div><a href={OFFICIAL_CATALOG_URL} target="_blank" rel="noreferrer" className="button button-light">Sumber resmi <ArrowUpRight size={15} /></a></div>{notice && <div className="inline-notice">{notice}</div>}<div className="admin-panel add-product-panel"><div className="panel-heading"><div><span className="eyebrow">ADD REFERENCE</span><h3>Tambah model katalog</h3></div></div><form className="admin-inline-form" onSubmit={addProduct}><label>Nama model<input required value={name} onChange={e => setName(e.target.value)} placeholder="Contoh: Asha Bag" /></label><label>Harga referensi (Rp)<input type="number" min="0" value={price} onChange={e => setPrice(e.target.value)} placeholder="108000" /></label><label className="url-field">URL produk resmi<input required type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://www.flickabags.com/products/..." /></label><button className="button button-dark" disabled={saving}>{saving ? 'Menyimpan…' : 'Tambah Model'}</button></form></div><div className="admin-panel"><div className="panel-heading"><div><span className="eyebrow">CATALOG LIST</span><h3>{products.length} model tersimpan</h3></div></div>{loading ? <div className="admin-loading"><span className="spinner" /> Memuat katalog…</div> : <div className="table-wrap"><table><thead><tr><th>Model</th><th>Harga referensi</th><th>Sumber</th><th>Status</th><th></th></tr></thead><tbody>{products.map(product => <tr key={product.id || product.slug}><td><strong>{product.name}</strong><small>{product.category}</small></td><td>{formatRupiah(product.officialPrice)}</td><td><a className="table-link" href={product.officialUrl} target="_blank" rel="noreferrer">Flicka <ArrowUpRight size={12} /></a></td><td><span className={product.isActive ? 'status-pill status-active' : 'status-pill status-muted'}>{product.isActive ? 'Aktif' : 'Disembunyikan'}</span></td><td><button className="small-action" onClick={() => void toggleProduct(product)}>{product.isActive ? 'Nonaktifkan' : 'Aktifkan'}</button></td></tr>)}</tbody></table>{!products.length && <div className="empty-state">Belum ada data katalog di database. Jalankan seed SQL untuk mengisi 12 model awal.</div>}</div>}</div></div>
+}
+
+
+function UnitsManager() {
+  const [units, setUnits] = useState<Record<string, unknown>[]>([])
+  const [products, setProducts] = useState<{ id: string; name: string }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [productId, setProductId] = useState('')
+  const [variant, setVariant] = useState('')
+  const [unitCode, setUnitCode] = useState('')
+  const [purchasePrice, setPurchasePrice] = useState('')
+  const [sellingPrice, setSellingPrice] = useState('')
+  const [photoUrl, setPhotoUrl] = useState('')
+  const [conditionNotes, setConditionNotes] = useState('')
+
+  async function refresh() {
+    if (!supabase) { setLoading(false); return }
+    const [unitResult, productResult] = await Promise.all([
+      supabase.from('units').select('id,unit_code,product_id,purchase_price,selling_price,actual_photo_urls,condition_notes,status,purchased_at,catalog_products(name),catalog_variants(name)').order('created_at', { ascending: false }).limit(200),
+      supabase.from('catalog_products').select('id,name').eq('is_active', true).order('name'),
+    ])
+    if (unitResult.error) setNotice('Gagal memuat unit fisik. Periksa migration dan kebijakan database.')
+    else setUnits((unitResult.data || []) as Record<string, unknown>[])
+    if (!productResult.error) setProducts(productResult.data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => { void refresh() }, [])
+
+  async function createUnit(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase) return
+    if (!productId) { setNotice('Pilih model katalog terlebih dahulu.'); return }
+    setSaving(true); setNotice('')
+    const generatedCode = unitCode.trim() || (
+      'JN-' + new Date().toISOString().slice(2, 10).replace(/-/g, '') +
+      '-' + crypto.randomUUID().slice(0, 6).toUpperCase()
+    )
+    const { error } = await supabase.from('units').insert({
+      unit_code: generatedCode,
+      product_id: productId,
+      purchase_price: purchasePrice ? Number(purchasePrice) : null,
+      selling_price: sellingPrice ? Number(sellingPrice) : null,
+      actual_photo_urls: photoUrl.trim() ? [photoUrl.trim()] : [],
+      condition_notes: conditionNotes.trim() || null,
+      status: 'available',
+      purchased_at: new Date().toISOString().slice(0, 10),
+    })
+    setSaving(false)
+    if (error) setNotice(error.message.includes('duplicate') ? 'Kode unit sudah digunakan. Buat kode lain.' : 'Unit gagal disimpan. Periksa data dan koneksi database.')
+    else {
+      setNotice('Unit fisik berhasil dicatat dengan status tersedia.')
+      setProductId(''); setVariant(''); setUnitCode(''); setPurchasePrice(''); setSellingPrice(''); setPhotoUrl(''); setConditionNotes('')
+      await refresh()
+    }
+  }
+
+  async function changeUnitStatus(id: string, status: string) {
+    if (!supabase) return
+    const { error } = await supabase.from('units').update({ status }).eq('id', id)
+    if (error) setNotice('Status unit gagal diperbarui.')
+    else { setNotice('Status unit diperbarui.'); await refresh() }
+  }
+
+  const statusLabels: Record<string,string> = {
+    available: 'Tersedia', reserved: 'Direservasi', sold: 'Terjual', packed: 'Dikemas',
+    shipped: 'Dikirim', completed: 'Selesai', cancelled: 'Dibatalkan',
+  }
+
+  return (
+    <div className="admin-view">
+      <div className="admin-section-intro"><div><span className="eyebrow">PHYSICAL INVENTORY</span><h2>Unit fisik</h2><p>Catat tas yang benar-benar ditemukan dan dibeli admin. Data ini berbeda dari katalog resmi.</p></div></div>
+      {notice && <div className="inline-notice">{notice}</div>}
+      <div className="admin-panel add-product-panel">
+        <div className="panel-heading"><div><span className="eyebrow">REGISTER ACTUAL UNIT</span><h3>Catat unit yang ditemukan</h3></div></div>
+        <form className="admin-inline-form unit-form" onSubmit={createUnit}>
+          <label>Model katalog<select required value={productId} onChange={e => setProductId(e.target.value)}><option value="">Pilih model</option>{products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
+          <label>Kode unit (opsional)<input value={unitCode} onChange={e => setUnitCode(e.target.value)} placeholder="Otomatis jika kosong" /></label>
+          <label>Harga beli (Rp)<input type="number" min="0" value={purchasePrice} onChange={e => setPurchasePrice(e.target.value)} placeholder="Modal aktual" /></label>
+          <label>Harga jual disepakati (Rp)<input type="number" min="0" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} placeholder="Harga ke customer" /></label>
+          <label className="unit-photo-field">URL foto aktual<input type="url" value={photoUrl} onChange={e => setPhotoUrl(e.target.value)} placeholder="Link foto unit dari Drive / storage" /></label>
+          <label className="unit-condition-field">Catatan kondisi<textarea rows={2} value={conditionNotes} onChange={e => setConditionNotes(e.target.value)} placeholder="Kondisi, defect minor, detail yang perlu diketahui customer" /></label>
+          <button className="button button-dark" disabled={saving || !products.length}>{saving ? 'Menyimpan…' : 'Simpan Unit'}</button>
+        </form>
+        <p className="order-helper unit-helper">Simpan URL foto yang dapat diakses admin/customer sesuai kebutuhan. Upload foto privat langsung dari perangkat belum diaktifkan pada slice ini.</p>
+      </div>
+      <div className="admin-panel">
+        <div className="panel-heading"><div><span className="eyebrow">UNIT TRACKER</span><h3>{units.length} unit tercatat</h3></div></div>
+        {loading ? <div className="admin-loading"><span className="spinner" /> Memuat unit…</div> : units.length ? (
+          <div className="table-wrap"><table><thead><tr><th>Kode unit</th><th>Model</th><th>Harga beli</th><th>Harga jual</th><th>Foto / kondisi</th><th>Status</th></tr></thead><tbody>
+            {units.map(unit => {
+              const product = unit.catalog_products as { name?: string } | null
+              const photo = Array.isArray(unit.actual_photo_urls) ? String(unit.actual_photo_urls[0] || '') : ''
+              return <tr key={String(unit.id)}>
+                <td><strong>{String(unit.unit_code)}</strong><small>{unit.purchased_at ? new Date(String(unit.purchased_at)).toLocaleDateString('id-ID') : 'Tanggal belum diisi'}</small></td>
+                <td><strong>{product?.name || 'Model tidak tersedia'}</strong><small>{String((unit.catalog_variants as { name?: string } | null)?.name || 'Varian belum dicatat')}</small></td>
+                <td>{unit.purchase_price == null ? '—' : formatRupiah(Number(unit.purchase_price))}</td>
+                <td>{unit.selling_price == null ? '—' : formatRupiah(Number(unit.selling_price))}</td>
+                <td>{photo ? <a className="table-link" href={photo} target="_blank" rel="noreferrer">Lihat foto <ArrowUpRight size={12} /></a> : 'Belum ada foto'}<small>{String(unit.condition_notes || 'Tanpa catatan kondisi')}</small></td>
+                <td><select className="order-status-select" value={String(unit.status)} onChange={e => void changeUnitStatus(String(unit.id), e.target.value)}>{Object.entries(statusLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></td>
+              </tr>
+            })}
+          </tbody></table></div>
+        ) : <div className="empty-state"><Box size={24} /><strong>Belum ada unit fisik</strong><span>Tambahkan unit setelah admin berhasil menemukan dan membelinya.</span></div>}
+      </div>
+    </div>
+  )
 }
 
 function RequestManager() {

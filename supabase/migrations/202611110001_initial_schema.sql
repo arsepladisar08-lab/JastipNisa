@@ -393,6 +393,10 @@ begin
   if v_checkout_method not in ('manual', 'shopee') then
     raise exception 'Unsupported checkout method' using errcode = '22023';
   end if;
+  if v_checkout_method = 'shopee'
+     and nullif(trim(p_payload ->> 'shopee_checkout_url'), '') is null then
+    raise exception 'Shopee checkout link is required' using errcode = '22023';
+  end if;
 
   v_shipping_fee := coalesce(nullif(p_payload ->> 'shipping_fee', '')::numeric, 0);
   v_discount := coalesce(nullif(p_payload ->> 'discount', '')::numeric, 0);
@@ -629,3 +633,29 @@ $$;
 
 revoke all on function public.record_order_payment(uuid, numeric, text, text, text, text) from public;
 grant execute on function public.record_order_payment(uuid, numeric, text, text, text, text) to authenticated;
+
+
+-- A Shopee order cannot progress to fulfillment until the buyer's Shopee
+-- username has been explicitly confirmed and recorded by the admin.
+create or replace function public.guard_shopee_order_fulfillment()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if old.checkout_method = 'shopee'
+     and new.status in ('packing', 'shipped', 'completed')
+     and (
+       nullif(trim(new.shopee_username), '') is null
+       or new.customer_shopee_confirmed_at is null
+     ) then
+    raise exception 'Confirm and record the customer Shopee username before fulfillment' using errcode = '22023';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists guard_shopee_order_fulfillment on public.orders;
+create trigger guard_shopee_order_fulfillment
+  before update of status on public.orders
+  for each row execute function public.guard_shopee_order_fulfillment();

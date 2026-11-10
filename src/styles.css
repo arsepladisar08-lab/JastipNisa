@@ -412,3 +412,21 @@ td small { margin-top: 4px; color: #a0948b; font-size: 8px; }
 @media (prefers-reduced-motion: reduce) {
   *,*::before,*::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+
+.product-request-link,.product-request-hint {
+  display: inline-flex;
+  min-height: 35px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 11px;
+  padding: 0 11px;
+  border: 1px solid #e7d9d4;
+  color: var(--rose);
+  font-size: 9px;
+  font-weight: 700;
+}
+.product-request-link { width: 100%; background: #fffafa; transition: background .2s ease, border-color .2s ease; }
+.product-request-link:hover { border-color: var(--rose); background: var(--rose-soft); }
+.product-request-hint { width: 100%; color: #9d9188; font-weight: 400; }

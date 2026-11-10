@@ -534,11 +534,13 @@ type OrderDraftItem = {
   variant: string
   quantity: number
   unitPrice: string
+  unitId: string
 }
 
 function OrdersManager() {
   const [orders, setOrders] = useState<Record<string, unknown>[]>([])
   const [products, setProducts] = useState<{ id: string; name: string; official_price: number | null }[]>([])
+  const [availableUnits, setAvailableUnits] = useState<{ id: string; unit_code: string; product_id: string; condition_notes: string | null }[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
@@ -552,19 +554,21 @@ function OrdersManager() {
   const [shopeeLink, setShopeeLink] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('bank_transfer')
   const [items, setItems] = useState<OrderDraftItem[]>([
-    { key: 'item-1', productId: '', productName: '', variant: '', quantity: 1, unitPrice: '' },
+    { key: 'item-1', productId: '', productName: '', variant: '', quantity: 1, unitPrice: '', unitId: '' },
   ])
   const [updatingOrder, setUpdatingOrder] = useState<string | null>(null)
 
   async function refresh() {
     if (!supabase) { setLoading(false); return }
-    const [orderResult, productResult] = await Promise.all([
+    const [orderResult, productResult, unitResult] = await Promise.all([
       supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username,shopee_checkout_url,product_count,jastip_fee,shipping_fee').order('created_at', { ascending: false }).limit(100),
       supabase.from('catalog_products').select('id,name,official_price').eq('is_active', true).order('name'),
+      supabase.from('units').select('id,unit_code,product_id,condition_notes').eq('status', 'available').order('created_at', { ascending: false }).limit(300),
     ])
     if (orderResult.error) setNotice('Gagal memuat data pesanan. Periksa migrasi database dan RLS.')
     else setOrders((orderResult.data || []) as Record<string, unknown>[])
     if (!productResult.error) setProducts(productResult.data || [])
+    if (!unitResult.error) setAvailableUnits(unitResult.data || [])
     setLoading(false)
   }
 
@@ -584,7 +588,7 @@ function OrdersManager() {
   function addItem() {
     setItems(current => [...current, {
       key: 'item-' + Date.now() + '-' + current.length,
-      productId: '', productName: '', variant: '', quantity: 1, unitPrice: '',
+      productId: '', productName: '', variant: '', quantity: 1, unitPrice: '', unitId: '',
     }])
   }
 
@@ -622,6 +626,7 @@ function OrdersManager() {
         variant_snapshot: item.variant.trim() || null,
         quantity: Math.max(1, Math.floor(item.quantity)),
         unit_price: Number(item.unitPrice),
+        unit_id: item.unitId || null,
       })),
     }
     const { data, error } = await supabase.rpc('create_order', { p_payload: payload })
@@ -635,7 +640,7 @@ function OrdersManager() {
     setCustomerName(''); setCustomerPhone(''); setShippingAddress('')
     setShippingFee('0'); setDiscount('0'); setDepositAmount('')
     setCheckoutMethod('manual'); setShopeeLink('')
-    setItems([{ key: 'item-' + Date.now(), productId: '', productName: '', variant: '', quantity: 1, unitPrice: '' }])
+    setItems([{ key: 'item-' + Date.now(), productId: '', productName: '', variant: '', quantity: 1, unitPrice: '', unitId: '' }])
     await refresh()
   }
 
@@ -688,10 +693,11 @@ function OrdersManager() {
                   <div className="order-item-index">0{index + 1}</div>
                   <label className="order-product-select">Model katalog<select required value={item.productId} onChange={e => {
                     const product = products.find(p => p.id === e.target.value)
-                    updateItem(item.key, { productId: e.target.value, productName: product?.name || '' })
+                    updateItem(item.key, { productId: e.target.value, productName: product?.name || '', unitId: '' })
                   }}><option value="">Pilih model</option>{products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
+                  <label className="order-unit-select">Unit fisik (opsional)<select value={item.unitId} disabled={!item.productId || item.quantity !== 1} onChange={e => updateItem(item.key, { unitId: e.target.value, quantity: 1 })}><option value="">Belum pilih unit tertentu</option>{availableUnits.filter(unit => unit.product_id === item.productId).map(unit => <option key={unit.id} value={unit.id}>{unit.unit_code}{unit.condition_notes ? ' · ' + unit.condition_notes : ''}</option>)}</select></label>
                   <label>Varian / warna<input value={item.variant} onChange={e => updateItem(item.key, { variant: e.target.value })} placeholder="Opsional" /></label>
-                  <label>Jumlah<input type="number" min="1" max="50" value={item.quantity} onChange={e => updateItem(item.key, { quantity: Math.max(1, Math.min(50, Number(e.target.value) || 1)) })} /></label>
+                  <label>Jumlah<input type="number" min="1" max="50" value={item.quantity} onChange={e => { const quantity = Math.max(1, Math.min(50, Number(e.target.value) || 1)); updateItem(item.key, { quantity, unitId: quantity === 1 ? item.unitId : '' }) }} /></label>
                   <label>Harga satuan (Rp)<input type="number" min="1" required value={item.unitPrice} onChange={e => updateItem(item.key, { unitPrice: e.target.value })} placeholder="Harga disepakati" /></label>
                   <button type="button" className="remove-item" disabled={items.length === 1} onClick={() => setItems(current => current.filter(row => row.key !== item.key))} aria-label="Hapus item"><Trash2 size={15} /></button>
                 </div>

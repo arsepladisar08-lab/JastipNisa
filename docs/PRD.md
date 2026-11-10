@@ -111,6 +111,8 @@ The public landing page is the default entry point. Admin tools exist at a direc
 | ADM-09 | P1 | Expense ledger | Admin can record operating expenses by category and review the recorded total |
 | DATA-01 | P0 | Database policies | RLS denies private table access to anonymous/non-admin clients |
 | DATA-02 | P0 | Secrets | No service-role key or privileged secret is shipped to browser code |
+| DATA-03 | P0 | Private files | Unit photos and payment proofs are stored in private buckets with admin-only policies and expiring signed URLs |
+| OPS-02 | P1 | Stock state sync | Unit reservation/fulfillment states follow order status; cancellation before shipment releases reserved/packed units |
 | UX-01 | P0 | Responsive and accessible | Keyboard, focus, labels, reduced motion and narrow viewport support |
 | OPS-01 | P1 | Deployment readiness | Environment variables and migrations are documented |
 

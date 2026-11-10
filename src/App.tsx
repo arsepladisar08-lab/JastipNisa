@@ -588,7 +588,7 @@ function OrdersManager() {
   async function refresh() {
     if (!supabase) { setLoading(false); return }
     const [orderResult, productResult, unitResult] = await Promise.all([
-      supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username,shopee_checkout_url,product_count,jastip_fee,shipping_fee,payments(amount,payment_type)').order('created_at', { ascending: false }).limit(100),
+      supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username,shopee_checkout_url,product_count,jastip_fee,shipping_fee,payments(amount,payment_type),shipments(courier,tracking_number,status,processed_at,shipped_at)').order('created_at', { ascending: false }).limit(100),
       supabase.from('catalog_products').select('id,name,official_price').eq('is_active', true).order('name'),
       supabase.from('units').select('id,unit_code,product_id,condition_notes').eq('status', 'available').order('created_at', { ascending: false }).limit(300),
     ])
@@ -722,6 +722,37 @@ function OrdersManager() {
     await refresh()
   }
 
+  async function saveShipment(orderId: string) {
+    if (!supabase) return
+    if (shipmentStatus === 'shipped' && !shipmentTracking.trim()) {
+      setNotice('Isi nomor resi sebelum menandai paket sudah dikirim.')
+      return
+    }
+    setUpdatingOrder(orderId); setNotice('')
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('shipments').upsert({
+      order_id: orderId,
+      courier: shipmentCourier.trim() || null,
+      tracking_number: shipmentTracking.trim() || null,
+      status: shipmentStatus,
+      processed_at: now,
+      shipped_at: shipmentStatus === 'shipped' || shipmentStatus === 'delivered' ? now : null,
+      estimated_processing_days: '2–3 hari kerja',
+    }, { onConflict: 'order_id' })
+    if (error) {
+      setUpdatingOrder(null); setNotice('Data pengiriman gagal disimpan.'); return
+    }
+    const orderStatus = shipmentStatus === 'preparing' ? 'packing'
+      : shipmentStatus === 'shipped' ? 'shipped'
+      : shipmentStatus === 'delivered' ? 'completed' : 'issue'
+    const { error: orderError } = await supabase.from('orders').update({ status: orderStatus }).eq('id', orderId)
+    setUpdatingOrder(null)
+    if (orderError) setNotice('Data pengiriman tersimpan, tetapi status order perlu diselaraskan secara manual.')
+    else setNotice('Informasi pengiriman dan status order berhasil diperbarui.')
+    setShipmentOrderId(null)
+    await refresh()
+  }
+
   const statuses = [
     ['awaiting_payment', 'Menunggu pembayaran'],
     ['deposit_received', 'Deposit diterima'],
@@ -830,7 +861,23 @@ function OrdersManager() {
                     <button type="button" onClick={() => setPaymentOrderId(null)}>Batal</button>
                   </div> : <button type="button" className="small-action" onClick={() => { setPaymentOrderId(String(order.id)); setPaymentAmount(''); setPaymentNotes('') }}>Catat pembayaran</button>}
                 </td>
-                <td><select className="order-status-select" aria-label={`Status order ${String(order.order_code)}`} disabled={updatingOrder === String(order.id)} value={String(order.status)} onChange={e => void changeOrderStatus(String(order.id), e.target.value)}>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
+                <td>
+                  <select className="order-status-select" aria-label={`Status order ${String(order.order_code)}`} disabled={updatingOrder === String(order.id)} value={String(order.status)} onChange={e => void changeOrderStatus(String(order.id), e.target.value)}>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+                  <button type="button" className="small-action" onClick={() => {
+                    const shipment = order.shipments as Record<string, unknown> | null
+                    setShipmentOrderId(shipmentOrderId === String(order.id) ? null : String(order.id))
+                    setShipmentCourier(String(shipment?.courier || ''))
+                    setShipmentTracking(String(shipment?.tracking_number || ''))
+                    setShipmentStatus((shipment?.status as 'preparing' | 'shipped' | 'delivered' | 'issue') || 'preparing')
+                  }}>Pengiriman</button>
+                  {shipmentOrderId === String(order.id) ? <div className="payment-inline-form shipment-inline-form">
+                    <input value={shipmentCourier} onChange={e => setShipmentCourier(e.target.value)} placeholder="Kurir" aria-label="Kurir" />
+                    <input value={shipmentTracking} onChange={e => setShipmentTracking(e.target.value)} placeholder="Nomor resi" aria-label="Nomor resi" />
+                    <select value={shipmentStatus} onChange={e => setShipmentStatus(e.target.value as 'preparing' | 'shipped' | 'delivered' | 'issue')} aria-label="Status pengiriman"><option value="preparing">Diproses / packing</option><option value="shipped">Dikirim</option><option value="delivered">Diterima</option><option value="issue">Kendala</option></select>
+                    <small>Estimasi proses admin: 2–3 hari kerja</small>
+                    <button type="button" disabled={updatingOrder === String(order.id)} onClick={() => void saveShipment(String(order.id))}>Simpan pengiriman</button>
+                  </div> : null}
+                </td>
               </tr>
               )
             })}

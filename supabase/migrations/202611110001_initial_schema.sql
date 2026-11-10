@@ -359,6 +359,7 @@ declare
   v_request_method text;
   v_request_payment_status text;
   v_request_product_id uuid;
+  v_request_workflow_status text;
   v_quantity integer;
   v_unit_price numeric(12,2);
   v_item jsonb;
@@ -400,9 +401,9 @@ begin
 
   if v_source_request_id is not null then
     select deposit_amount, deposit_proof_url, deposit_method,
-           deposit_payment_status, product_id
+           deposit_payment_status, product_id, status
       into v_request_deposit, v_request_proof_url, v_request_method,
-           v_request_payment_status, v_request_product_id
+           v_request_payment_status, v_request_product_id, v_request_workflow_status
     from public.requests
     where id = v_source_request_id
     for update;
@@ -412,6 +413,9 @@ begin
     end if;
     if v_request_payment_status <> 'verified' or v_request_deposit <= 0 then
       raise exception 'Source request deposit must be verified before order conversion' using errcode = '22023';
+    end if;
+    if v_request_workflow_status <> 'found' then
+      raise exception 'Source request must be marked found before order conversion' using errcode = '22023';
     end if;
     if v_request_product_id is not null and not exists (
       select 1

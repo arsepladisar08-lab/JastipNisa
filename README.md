@@ -52,6 +52,8 @@ No privileged service-role key belongs in browser environment variables.
 
 ## Docs
 
+- [Supabase setup & first-admin guide](docs/SUPABASE_SETUP.md)
+
 - [PRD](docs/PRD.md)
 - [Design](docs/DESIGN.md)
 - [Architecture](docs/ARCHITECTURE.md)

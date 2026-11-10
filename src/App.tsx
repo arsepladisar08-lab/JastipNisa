@@ -584,6 +584,10 @@ function OrdersManager() {
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentProofUrl, setPaymentProofUrl] = useState('')
   const [depositProofUrl, setDepositProofUrl] = useState('')
+  const [shipmentOrderId, setShipmentOrderId] = useState<string | null>(null)
+  const [shipmentCourier, setShipmentCourier] = useState('')
+  const [shipmentTracking, setShipmentTracking] = useState('')
+  const [shipmentStatus, setShipmentStatus] = useState<'preparing' | 'shipped' | 'delivered' | 'issue'>('preparing')
   const [shopeeUsernames, setShopeeUsernames] = useState<Record<string, string>>({})
 
   async function refresh() {

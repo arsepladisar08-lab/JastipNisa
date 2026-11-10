@@ -304,3 +304,156 @@ grant select, insert, update, delete on public.catalog_products, public.catalog_
 -- Bootstrap the first admin only after creating that user in Supabase Auth:
 -- update public.profiles set role = 'admin', is_active = true
 -- where id = (select id from auth.users where email = 'YOUR_ADMIN_EMAIL');
+
+
+-- Fee is computed again in PostgreSQL so clients cannot choose an arbitrary fee.
+create or replace function public.calculate_jastip_fee(p_product_count integer)
+returns numeric
+language sql
+immutable
+as $$
+  select case
+    when coalesce(p_product_count, 0) <= 0 then 0::numeric
+    when p_product_count = 1 then 15000::numeric
+    else 25000::numeric + ((p_product_count - 2) * 10000)::numeric
+  end;
+$$;
+
+revoke all on function public.calculate_jastip_fee(integer) from public;
+grant execute on function public.calculate_jastip_fee(integer) to authenticated;
+
+create sequence if not exists public.order_code_seq;
+
+-- Atomically creates an admin-confirmed order, its item snapshots and an optional
+-- deposit/payment ledger row. The deposit amount is explicitly entered by admin;
+-- no percentage or fixed deposit policy is assumed by this function.
+create or replace function public.create_order(p_payload jsonb)
+returns table(order_id uuid, order_code text)
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_order_id uuid;
+  v_order_code text;
+  v_customer_name text;
+  v_customer_phone text;
+  v_shipping_address text;
+  v_checkout_method text;
+  v_product_count integer := 0;
+  v_product_subtotal numeric(12,2) := 0;
+  v_jastip_fee numeric(12,2) := 0;
+  v_shipping_fee numeric(12,2) := 0;
+  v_discount numeric(12,2) := 0;
+  v_total numeric(12,2) := 0;
+  v_deposit numeric(12,2) := 0;
+  v_quantity integer;
+  v_unit_price numeric(12,2);
+  v_item jsonb;
+  v_unit_id uuid;
+  v_unit_status text;
+begin
+  if not public.is_admin() then
+    raise exception 'Admin access required' using errcode = '42501';
+  end if;
+
+  if p_payload is null or jsonb_typeof(p_payload -> 'items') <> 'array'
+     or jsonb_array_length(p_payload -> 'items') = 0 then
+    raise exception 'Order must contain at least one item' using errcode = '22023';
+  end if;
+
+  v_customer_name := nullif(trim(p_payload ->> 'customer_name'), '');
+  v_customer_phone := nullif(trim(p_payload ->> 'customer_phone'), '');
+  v_shipping_address := nullif(trim(p_payload ->> 'shipping_address'), '');
+  v_checkout_method := coalesce(nullif(p_payload ->> 'checkout_method', ''), 'manual');
+
+  if v_customer_name is null or v_customer_phone is null or v_shipping_address is null then
+    raise exception 'Customer name, phone and shipping address are required' using errcode = '22023';
+  end if;
+
+  if v_checkout_method not in ('manual', 'shopee') then
+    raise exception 'Unsupported checkout method' using errcode = '22023';
+  end if;
+
+  v_shipping_fee := coalesce(nullif(p_payload ->> 'shipping_fee', '')::numeric, 0);
+  v_discount := coalesce(nullif(p_payload ->> 'discount', '')::numeric, 0);
+  v_deposit := coalesce(nullif(p_payload ->> 'deposit_amount', '')::numeric, 0);
+
+  if v_shipping_fee < 0 or v_discount < 0 or v_deposit < 0 then
+    raise exception 'Amounts cannot be negative' using errcode = '22023';
+  end if;
+
+  for v_item in select value from jsonb_array_elements(p_payload -> 'items')
+  loop
+    v_quantity := coalesce(nullif(v_item ->> 'quantity', '')::integer, 1);
+    v_unit_price := coalesce(nullif(v_item ->> 'unit_price', '')::numeric, 0);
+    if v_quantity < 1 or v_unit_price < 0 then
+      raise exception 'Item quantity and price are invalid' using errcode = '22023';
+    end if;
+    if nullif(trim(v_item ->> 'product_name_snapshot'), '') is null then
+      raise exception 'Each item must include a product name' using errcode = '22023';
+    end if;
+    v_product_count := v_product_count + v_quantity;
+    v_product_subtotal := v_product_subtotal + (v_quantity * v_unit_price);
+  end loop;
+
+  v_jastip_fee := public.calculate_jastip_fee(v_product_count);
+  v_total := greatest(0, v_product_subtotal + v_jastip_fee + v_shipping_fee - v_discount);
+  v_order_code := 'JN-' || to_char(now(), 'YYMMDD') || '-' || lpad(nextval('public.order_code_seq')::text, 6, '0');
+
+  insert into public.orders (
+    order_code, customer_name, customer_phone, shipping_address,
+    checkout_method, shopee_checkout_url, product_subtotal, product_count,
+    jastip_fee, shipping_fee, discount, total_amount, status, payment_status, admin_notes
+  ) values (
+    v_order_code, v_customer_name, v_customer_phone, v_shipping_address,
+    v_checkout_method, nullif(p_payload ->> 'shopee_checkout_url', ''),
+    v_product_subtotal, v_product_count, v_jastip_fee, v_shipping_fee,
+    v_discount, v_total, 'awaiting_payment',
+    case when v_deposit > 0 then 'deposit_received' else 'unpaid' end,
+    nullif(p_payload ->> 'admin_notes', '')
+  ) returning id into v_order_id;
+
+  for v_item in select value from jsonb_array_elements(p_payload -> 'items')
+  loop
+    v_unit_id := nullif(v_item ->> 'unit_id', '')::uuid;
+    v_quantity := coalesce(nullif(v_item ->> 'quantity', '')::integer, 1);
+    v_unit_price := coalesce(nullif(v_item ->> 'unit_price', '')::numeric, 0);
+
+    if v_unit_id is not null then
+      select status into v_unit_status
+      from public.units where id = v_unit_id for update;
+      if not found or v_unit_status <> 'available' then
+        raise exception 'Selected physical unit is not available' using errcode = '22023';
+      end if;
+      update public.units set status = 'reserved' where id = v_unit_id;
+    end if;
+
+    insert into public.order_items (
+      order_id, unit_id, product_id, product_name_snapshot,
+      variant_snapshot, quantity, unit_price
+    ) values (
+      v_order_id,
+      v_unit_id,
+      nullif(v_item ->> 'product_id', '')::uuid,
+      trim(v_item ->> 'product_name_snapshot'),
+      nullif(v_item ->> 'variant_snapshot', ''),
+      v_quantity,
+      v_unit_price
+    );
+  end loop;
+
+  if v_deposit > 0 then
+    if v_deposit > v_total then
+      raise exception 'Deposit cannot exceed the order total' using errcode = '22023';
+    end if;
+    insert into public.payments (order_id, amount, payment_type, method, received_at, notes)
+    values (v_order_id, v_deposit, 'deposit', coalesce(nullif(p_payload ->> 'payment_method', ''), 'bank_transfer'), now(), 'Deposit dicatat saat order dibuat');
+  end if;
+
+  return query select v_order_id, v_order_code;
+end;
+$$;
+
+revoke all on function public.create_order(jsonb) from public;
+grant execute on function public.create_order(jsonb) to authenticated;

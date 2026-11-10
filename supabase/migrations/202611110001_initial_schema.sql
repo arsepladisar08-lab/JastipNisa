@@ -457,8 +457,13 @@ begin
     if v_deposit > v_total then
       raise exception 'Deposit cannot exceed the order total' using errcode = '22023';
     end if;
-    insert into public.payments (order_id, amount, payment_type, method, received_at, notes)
-    values (v_order_id, v_deposit, 'deposit', coalesce(nullif(p_payload ->> 'payment_method', ''), 'bank_transfer'), now(), 'Deposit dicatat saat order dibuat');
+    insert into public.payments (order_id, amount, payment_type, method, proof_url, received_at, notes)
+    values (
+      v_order_id, v_deposit, 'deposit',
+      coalesce(nullif(p_payload ->> 'payment_method', ''), 'bank_transfer'),
+      nullif(p_payload ->> 'payment_proof_url', ''),
+      now(), 'Deposit dicatat saat order dibuat'
+    );
   end if;
 
   return query select v_order_id, v_order_code;
@@ -477,7 +482,8 @@ create or replace function public.record_order_payment(
   p_amount numeric,
   p_payment_type text default 'settlement',
   p_method text default 'bank_transfer',
-  p_notes text default null
+  p_notes text default null,
+  p_proof_url text default null
 )
 returns void
 language plpgsql
@@ -523,8 +529,12 @@ begin
     v_new_net := v_current_net + p_amount;
   end if;
 
-  insert into public.payments (order_id, amount, payment_type, method, received_at, notes)
-  values (p_order_id, p_amount, p_payment_type, coalesce(nullif(p_method, ''), 'bank_transfer'), now(), nullif(p_notes, ''));
+  insert into public.payments (order_id, amount, payment_type, method, proof_url, received_at, notes)
+  values (
+    p_order_id, p_amount, p_payment_type,
+    coalesce(nullif(p_method, ''), 'bank_transfer'),
+    nullif(p_proof_url, ''), now(), nullif(p_notes, '')
+  );
 
   select exists (
     select 1 from public.payments
@@ -542,5 +552,5 @@ begin
 end;
 $$;
 
-revoke all on function public.record_order_payment(uuid, numeric, text, text, text) from public;
-grant execute on function public.record_order_payment(uuid, numeric, text, text, text) to authenticated;
+revoke all on function public.record_order_payment(uuid, numeric, text, text, text, text) from public;
+grant execute on function public.record_order_payment(uuid, numeric, text, text, text, text) to authenticated;

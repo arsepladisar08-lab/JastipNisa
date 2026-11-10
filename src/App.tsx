@@ -557,12 +557,17 @@ function OrdersManager() {
     { key: 'item-1', productId: '', productName: '', variant: '', quantity: 1, unitPrice: '', unitId: '' },
   ])
   const [updatingOrder, setUpdatingOrder] = useState<string | null>(null)
+  const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null)
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentType, setPaymentType] = useState<'deposit' | 'settlement' | 'shipping' | 'refund'>('settlement')
+  const [paymentMethodEntry, setPaymentMethodEntry] = useState('bank_transfer')
+  const [paymentNotes, setPaymentNotes] = useState('')
   const [shopeeUsernames, setShopeeUsernames] = useState<Record<string, string>>({})
 
   async function refresh() {
     if (!supabase) { setLoading(false); return }
     const [orderResult, productResult, unitResult] = await Promise.all([
-      supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username,shopee_checkout_url,product_count,jastip_fee,shipping_fee').order('created_at', { ascending: false }).limit(100),
+      supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username,shopee_checkout_url,product_count,jastip_fee,shipping_fee,payments(amount,payment_type)').order('created_at', { ascending: false }).limit(100),
       supabase.from('catalog_products').select('id,name,official_price').eq('is_active', true).order('name'),
       supabase.from('units').select('id,unit_code,product_id,condition_notes').eq('status', 'available').order('created_at', { ascending: false }).limit(300),
     ])
@@ -668,6 +673,32 @@ function OrdersManager() {
     else { setNotice('Nama akun Shopee berhasil dicatat.'); await refresh() }
   }
 
+  async function recordPayment(orderId: string) {
+    if (!supabase) return
+    const amount = Number(paymentAmount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setNotice('Masukkan nominal pembayaran atau refund yang valid.')
+      return
+    }
+    setUpdatingOrder(orderId); setNotice('')
+    const { error } = await supabase.rpc('record_order_payment', {
+      p_order_id: orderId,
+      p_amount: amount,
+      p_payment_type: paymentType,
+      p_method: paymentMethodEntry,
+      p_notes: paymentNotes.trim() || null,
+    })
+    setUpdatingOrder(null)
+    if (error) {
+      setNotice('Pembayaran gagal dicatat. Periksa nominal, sisa tagihan, dan migration terbaru.')
+      return
+    }
+    setNotice('Ledger pembayaran berhasil diperbarui.')
+    setPaymentOrderId(null); setPaymentAmount(''); setPaymentNotes('')
+    setPaymentType('settlement')
+    await refresh()
+  }
+
   const statuses = [
     ['awaiting_payment', 'Menunggu pembayaran'],
     ['deposit_received', 'Deposit diterima'],
@@ -748,8 +779,12 @@ function OrdersManager() {
       <div className="admin-panel">
         <div className="panel-heading"><div><span className="eyebrow">ALL ORDERS</span><h3>{orders.length} pesanan tersimpan</h3></div></div>
         {loading ? <div className="admin-loading"><span className="spinner" /> Memuat pesanan…</div> : orders.length ? (
-          <div className="table-wrap"><table><thead><tr><th>Order</th><th>Pelanggan</th><th>Jumlah</th><th>Total</th><th>Pembayaran</th><th>Status</th></tr></thead><tbody>
-            {orders.map(order => (
+          <div className="table-wrap"><table><thead><tr><th>Order</th><th>Pelanggan</th><th>Jumlah</th><th>Total</th><th>Masuk / Sisa</th><th>Pembayaran</th><th>Status</th></tr></thead><tbody>
+            {orders.map(order => {
+              const paymentRows = Array.isArray(order.payments) ? order.payments as Record<string, unknown>[] : []
+              const paidAmount = paymentRows.reduce((sum, payment) => sum + (payment.payment_type === 'refund' ? -Number(payment.amount) : Number(payment.amount)), 0)
+              const balance = Math.max(0, Number(order.total_amount) - paidAmount)
+              return (
               <tr key={String(order.id)}>
                 <td><strong>{String(order.order_code)}</strong><small>{new Date(String(order.created_at)).toLocaleDateString('id-ID')} · {String(order.checkout_method)}</small></td>
                 <td>
@@ -758,10 +793,22 @@ function OrdersManager() {
                 </td>
                 <td>{String(order.product_count || 0)} produk<small>Fee {formatRupiah(Number(order.jastip_fee || 0))}</small></td>
                 <td>{formatRupiah(Number(order.total_amount))}</td>
-                <td><span className="status-pill status-muted">{String(order.payment_status)}</span></td>
+                <td><strong>{formatRupiah(paidAmount)}</strong><small>Sisa {formatRupiah(balance)}</small></td>
+                <td>
+                  <span className="status-pill status-muted">{String(order.payment_status)}</span>
+                  {paymentOrderId === String(order.id) ? <div className="payment-inline-form">
+                    <input type="number" min="1" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="Nominal Rp" aria-label="Nominal pembayaran" />
+                    <select value={paymentType} onChange={e => setPaymentType(e.target.value as 'deposit' | 'settlement' | 'shipping' | 'refund')} aria-label="Jenis pembayaran"><option value="deposit">Deposit</option><option value="settlement">Pelunasan</option><option value="shipping">Ongkir</option><option value="refund">Refund</option></select>
+                    <select value={paymentMethodEntry} onChange={e => setPaymentMethodEntry(e.target.value)} aria-label="Metode pembayaran"><option value="bank_transfer">Transfer bank</option><option value="qris">QRIS</option><option value="cash">Tunai</option><option value="shopee">Shopee</option></select>
+                    <input value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} placeholder="Catatan (opsional)" aria-label="Catatan pembayaran" />
+                    <button type="button" disabled={updatingOrder === String(order.id)} onClick={() => void recordPayment(String(order.id))}>Simpan</button>
+                    <button type="button" onClick={() => setPaymentOrderId(null)}>Batal</button>
+                  </div> : <button type="button" className="small-action" onClick={() => { setPaymentOrderId(String(order.id)); setPaymentAmount(''); setPaymentNotes('') }}>Catat pembayaran</button>}
+                </td>
                 <td><select className="order-status-select" aria-label={`Status order ${String(order.order_code)}`} disabled={updatingOrder === String(order.id)} value={String(order.status)} onChange={e => void changeOrderStatus(String(order.id), e.target.value)}>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
               </tr>
-            ))}
+              )
+            })}
           </tbody></table></div>
         ) : <div className="empty-state"><PackageCheck size={24} /><strong>Belum ada pesanan</strong><span>Order final yang dibuat admin akan muncul di sini.</span></div>}
       </div>

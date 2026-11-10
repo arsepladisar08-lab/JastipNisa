@@ -352,6 +352,7 @@ declare
   v_item jsonb;
   v_unit_id uuid;
   v_unit_status text;
+  v_unit_product_id uuid;
 begin
   if not public.is_admin() then
     raise exception 'Admin access required' using errcode = '42501';
@@ -431,10 +432,13 @@ begin
       if v_quantity <> 1 then
         raise exception 'A physical unit can only be assigned to a single-quantity item' using errcode = '22023';
       end if;
-      select status into v_unit_status
+      select status, product_id into v_unit_status, v_unit_product_id
       from public.units where id = v_unit_id for update;
       if not found or v_unit_status <> 'available' then
         raise exception 'Selected physical unit is not available' using errcode = '22023';
+      end if;
+      if nullif(v_item ->> 'product_id', '')::uuid is distinct from v_unit_product_id then
+        raise exception 'Selected unit does not match the chosen catalog product' using errcode = '22023';
       end if;
       update public.units set status = 'reserved' where id = v_unit_id;
     end if;

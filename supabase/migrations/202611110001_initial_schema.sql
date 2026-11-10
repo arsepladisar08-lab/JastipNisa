@@ -358,8 +358,13 @@ begin
     raise exception 'Admin access required' using errcode = '42501';
   end if;
 
-  if p_payload is null or jsonb_typeof(p_payload -> 'items') <> 'array'
-     or jsonb_array_length(p_payload -> 'items') = 0 then
+  if p_payload is null then
+    raise exception 'Order payload is required' using errcode = '22023';
+  end if;
+  if jsonb_typeof(p_payload -> 'items') is distinct from 'array' then
+    raise exception 'Order items must be an array' using errcode = '22023';
+  end if;
+  if jsonb_array_length(p_payload -> 'items') = 0 then
     raise exception 'Order must contain at least one item' using errcode = '22023';
   end if;
 
@@ -388,11 +393,20 @@ begin
   loop
     v_quantity := coalesce(nullif(v_item ->> 'quantity', '')::integer, 1);
     v_unit_price := coalesce(nullif(v_item ->> 'unit_price', '')::numeric, 0);
-    if v_quantity < 1 or v_unit_price < 0 then
-      raise exception 'Item quantity and price are invalid' using errcode = '22023';
+    if v_quantity < 1 or v_unit_price <= 0 then
+      raise exception 'Item quantity must be positive and unit price must be greater than zero' using errcode = '22023';
     end if;
     if nullif(trim(v_item ->> 'product_name_snapshot'), '') is null then
       raise exception 'Each item must include a product name' using errcode = '22023';
+    end if;
+    if nullif(v_item ->> 'product_id', '') is null then
+      raise exception 'Each item must reference a catalog product' using errcode = '22023';
+    end if;
+    if not exists (
+      select 1 from public.catalog_products p
+      where p.id = (v_item ->> 'product_id')::uuid
+    ) then
+      raise exception 'Catalog product does not exist' using errcode = '22023';
     end if;
     v_product_count := v_product_count + v_quantity;
     v_product_subtotal := v_product_subtotal + (v_quantity * v_unit_price);
@@ -547,6 +561,10 @@ begin
 
   update public.orders
   set payment_status = case
+    when v_new_net <= 0 and exists (
+      select 1 from public.payments
+      where order_id = p_order_id and payment_type = 'refund'
+    ) then 'refunded'
     when v_new_net <= 0 then 'unpaid'
     when v_new_net >= v_total then 'paid'
     when v_has_settlement then 'partially_paid'

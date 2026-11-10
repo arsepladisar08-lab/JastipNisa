@@ -37,7 +37,9 @@ No substantial skill source file is vendored into this repository. This is a pro
 ### Slice 2 — Admin workspace foundation
 - [x] Private login route and role gate.
 - [x] Admin dashboard/catalog/request/order views foundation.
-- [ ] Complete CRUD for every operational entity.
+- [x] Admin creates confirmed orders through a PostgreSQL RPC that calculates the fee server-side and writes items plus optional received-deposit ledger row atomically.
+- [x] Admin can update the current order workflow status.
+- [ ] Add payment settlement/refund ledger actions, shipment tracking and expense management.
 - [ ] Upload actual unit photos/payment proof to private storage.
 
 ### Slice 3 — Operational workflow

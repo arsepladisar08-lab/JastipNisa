@@ -36,11 +36,13 @@ No substantial skill source file is vendored into this repository. This is a pro
 
 ### Slice 2 — Admin workspace foundation
 - [x] Private login route and role gate.
-- [x] Admin dashboard/catalog/request/order views foundation.
+- [x] Admin dashboard, catalog, physical unit, request and order workspace.
 - [x] Admin creates confirmed orders through a PostgreSQL RPC that calculates the fee server-side and writes items plus optional received-deposit ledger row atomically.
 - [x] Admin can update the current order workflow status.
-- [ ] Add payment settlement/refund ledger actions, shipment tracking and expense management.
-- [ ] Upload actual unit photos/payment proof to private storage.
+- [x] Admin records deposit, settlement, shipping and refund entries through an admin-only database RPC; order payment status is recalculated from the ledger.
+- [x] Admin can record Shopee username confirmation and update unit/order workflow statuses.
+- [ ] Add shipment tracking and expense management.
+- [ ] Replace external photo/proof URL references with private Supabase Storage uploads and policies.
 
 ### Slice 3 — Operational workflow
 - [ ] Request matching to actual units.

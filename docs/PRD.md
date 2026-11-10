@@ -118,4 +118,4 @@ Customer name, WhatsApp number, address, payment proof and Shopee username are p
 
 ## 10. Initial release boundary
 
-This first implementation establishes the public storefront, fee calculator, admin authentication gate, admin workspace, catalog reference seed, request tracking and an admin order-creation RPC that atomically stores order items and an optional actual deposit amount. Payment gateway automation, private file uploads, shipment tracking and expense management remain subsequent vertical slices and must be marked incomplete until implemented and verified.
+This first implementation establishes the public storefront, fee calculator, admin authentication gate, catalog references, request and physical-unit management, confirmed order creation, payment/refund ledger, Shopee username confirmation, shipment tracking and expense ledger. Payment gateway automation, private file uploads, direct request-to-unit matching, advanced reporting and live deployment remain incomplete until configured and verified.

@@ -39,6 +39,7 @@ No substantial skill source file is vendored into this repository. This is a pro
 - [x] Admin dashboard, catalog management, physical unit registration, request tracker and order manager.
 - [x] Record the customer deposit and transfer proof at request stage; admin can verify or reject the proof.
 - [x] Convert a request only after it is marked found and its deposit is verified; the database transfers that deposit/proof into the order ledger exactly once.
+- [x] Keep physical unit status synchronized with order fulfillment; canceling before shipment releases reserved/packed units.
 - [x] Register actual unit code, model/variant, price, condition, photo URL and stock status.
 - [x] Create confirmed orders through an admin-only PostgreSQL RPC; server recalculates fee and atomically stores items and an optional actual deposit.
 - [x] Reserve a selected physical unit in the same order transaction and validate that it matches the selected catalog product.

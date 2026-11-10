@@ -668,6 +668,8 @@ function OrdersManager() {
   const [orders, setOrders] = useState<Record<string, unknown>[]>([])
   const [products, setProducts] = useState<{ id: string; name: string; official_price: number | null }[]>([])
   const [availableUnits, setAvailableUnits] = useState<{ id: string; unit_code: string; product_id: string; condition_notes: string | null }[]>([])
+  const [verifiedRequests, setVerifiedRequests] = useState<Record<string, unknown>[]>([])
+  const [sourceRequestId, setSourceRequestId] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
@@ -699,15 +701,17 @@ function OrdersManager() {
 
   async function refresh() {
     if (!supabase) { setLoading(false); return }
-    const [orderResult, productResult, unitResult] = await Promise.all([
-      supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username,shopee_checkout_url,product_count,jastip_fee,shipping_fee,payments(amount,payment_type),shipments(courier,tracking_number,status,processed_at,shipped_at)').order('created_at', { ascending: false }).limit(100),
+    const [orderResult, productResult, unitResult, requestResult] = await Promise.all([
+      supabase.from('orders').select('id,order_code,customer_name,customer_phone,total_amount,status,payment_status,created_at,checkout_method,shopee_username,shopee_checkout_url,product_count,jastip_fee,shipping_fee,source_request_id,payments(amount,payment_type),shipments(courier,tracking_number,status,processed_at,shipped_at)').order('created_at', { ascending: false }).limit(100),
       supabase.from('catalog_products').select('id,name,official_price').eq('is_active', true).order('name'),
       supabase.from('units').select('id,unit_code,product_id,condition_notes').eq('status', 'available').order('created_at', { ascending: false }).limit(300),
+      supabase.from('requests').select('id,customer_name,customer_phone,product_id,requested_product_name,requested_variant,deposit_amount,deposit_method,deposit_proof_url').eq('status', 'found').eq('deposit_payment_status', 'verified').order('created_at', { ascending: false }).limit(100),
     ])
     if (orderResult.error) setNotice('Gagal memuat data pesanan. Periksa migrasi database dan RLS.')
     else setOrders((orderResult.data || []) as Record<string, unknown>[])
     if (!productResult.error) setProducts(productResult.data || [])
     if (!unitResult.error) setAvailableUnits(unitResult.data || [])
+    if (!requestResult.error) setVerifiedRequests((requestResult.data || []) as Record<string, unknown>[])
     setLoading(false)
   }
 
@@ -729,6 +733,35 @@ function OrdersManager() {
       key: 'item-' + Date.now() + '-' + current.length,
       productId: '', productName: '', variant: '', quantity: 1, unitPrice: '', unitId: '',
     }])
+  }
+
+  function selectSourceRequest(requestId: string) {
+    setSourceRequestId(requestId)
+    if (!requestId) {
+      setDepositAmount('')
+      setDepositProofUrl('')
+      return
+    }
+    const request = verifiedRequests.find(item => String(item.id) === requestId)
+    if (!request) return
+    const product = products.find(item =>
+      item.id === request.product_id || item.name === request.requested_product_name
+    )
+    setCustomerName(String(request.customer_name || ''))
+    setCustomerPhone(String(request.customer_phone || ''))
+    setDepositAmount(String(request.deposit_amount || ''))
+    setDepositProofUrl(String(request.deposit_proof_url || ''))
+    setPaymentMethod(String(request.deposit_method || 'bank_transfer'))
+    setItems(current => {
+      const first = current[0] || { key: 'item-' + Date.now(), productId: '', productName: '', variant: '', quantity: 1, unitPrice: '', unitId: '' }
+      return [{
+        ...first,
+        productId: product?.id || '',
+        productName: product?.name || String(request.requested_product_name || ''),
+        variant: String(request.requested_variant || ''),
+        unitId: '',
+      }, ...current.slice(1)]
+    })
   }
 
   async function createOrder(event: FormEvent) {
@@ -753,6 +786,7 @@ function OrdersManager() {
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
       shipping_address: shippingAddress.trim(),
+      source_request_id: sourceRequestId || null,
       checkout_method: checkoutMethod,
       shopee_checkout_url: checkoutMethod === 'shopee' ? shopeeLink.trim() : null,
       shipping_fee: shipping,
@@ -778,6 +812,7 @@ function OrdersManager() {
     const created = Array.isArray(data) ? data[0] : data
     setNotice('Order ' + (created?.order_code || '') + ' berhasil dibuat. Fee dihitung ulang oleh database.')
     setCustomerName(''); setCustomerPhone(''); setShippingAddress('')
+    setSourceRequestId('')
     setShippingFee('0'); setDiscount('0'); setDepositAmount(''); setDepositProofUrl('')
     setCheckoutMethod('manual'); setShopeeLink('')
     setItems([{ key: 'item-' + Date.now(), productId: '', productName: '', variant: '', quantity: 1, unitPrice: '', unitId: '' }])
@@ -891,6 +926,7 @@ function OrdersManager() {
           <div className="order-form-section">
             <span className="order-form-label">01 · DATA PELANGGAN</span>
             <div className="order-form-grid">
+              <label className="field-full">Request sumber (deposit sudah diverifikasi)<select value={sourceRequestId} onChange={e => selectSourceRequest(e.target.value)}><option value="">Buat order tanpa request sumber</option>{verifiedRequests.map(request => <option key={String(request.id)} value={String(request.id)}>{String(request.customer_name)} · {String(request.requested_product_name)} · {formatRupiah(Number(request.deposit_amount || 0))}</option>)}</select></label>
               <label>Nama lengkap<input required value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Nama penerima" /></label>
               <label>Nomor HP / WhatsApp<input required value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="08xxxxxxxxxx" /></label>
               <label className="field-full">Alamat pengiriman<textarea required rows={2} value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} placeholder="Alamat lengkap, kecamatan, kota, kode pos" /></label>
@@ -925,8 +961,8 @@ function OrdersManager() {
               {checkoutMethod === 'shopee' && <label>Link checkout Shopee<input required type="url" value={shopeeLink} onChange={e => setShopeeLink(e.target.value)} placeholder="https://shopee.co.id/..." /></label>}
               <label>Ongkir (Rp)<input type="number" min="0" value={shippingFee} onChange={e => setShippingFee(e.target.value)} /></label>
               <label>Diskon (Rp)<input type="number" min="0" value={discount} onChange={e => setDiscount(e.target.value)} /></label>
-              <label>Deposit diterima (Rp)<input type="number" min="0" max={total} value={depositAmount} onChange={e => setDepositAmount(e.target.value)} placeholder="Isi jika sudah diterima" /></label>
-              <label>Link bukti deposit (opsional)<input type="url" value={depositProofUrl} onChange={e => setDepositProofUrl(e.target.value)} placeholder="Link Drive / storage privat" /></label>
+              <label>Deposit diterima (Rp)<input type="number" min="0" max={total} value={depositAmount} readOnly={Boolean(sourceRequestId)} onChange={e => setDepositAmount(e.target.value)} placeholder="Isi jika sudah diterima" /></label>
+              <label>Link bukti deposit (opsional)<input type="url" value={depositProofUrl} readOnly={Boolean(sourceRequestId)} onChange={e => setDepositProofUrl(e.target.value)} placeholder="Link Drive / storage privat" /></label>
               <label>Metode pembayaran<select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option value="bank_transfer">Transfer bank</option><option value="qris">QRIS</option><option value="cash">Tunai</option><option value="shopee">Shopee</option></select></label>
             </div>
             <p className="order-helper">Deposit dicatat sesuai nominal yang benar-benar diterima. Tidak ada nominal atau persentase deposit otomatis.</p>

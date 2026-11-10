@@ -25,43 +25,42 @@ No substantial skill source file is vendored into this repository. This is a pro
 - [x] Define PRD, design and architecture.
 - [x] Select React + Vite + TypeScript + Supabase.
 - [x] Initialize public-first routes and theme.
-- [x] Add initial Supabase schema and RLS baseline.
-- [ ] Configure Supabase project/environment and promote first admin.
-- [ ] Install dependencies and run build/typecheck in a real environment.
+- [x] Add initial Supabase schema, admin-only RPCs and RLS baseline.
+- [x] Install dependencies and verify TypeScript, unit tests and production build through GitHub Actions CI.
+- [ ] Configure a real Supabase project, apply migration/seed and promote the first admin account.
 
 ### Slice 1 — Public storefront
-- [x] Public landing page and catalog reference list.
-- [x] Ordering flow, fee rule, policies and WhatsApp CTA.
-- [ ] Confirm content/policies and admin WhatsApp number.
+- [x] Public landing page and official catalog reference list.
+- [x] Ordering flow, fee rule, policies and model-specific WhatsApp request CTA.
+- [ ] Confirm final public copy and configure the admin WhatsApp number.
 
-### Slice 2 — Admin workspace foundation
-- [x] Private login route and role gate.
-- [x] Admin dashboard, catalog, physical unit, request and order workspace.
-- [x] Admin creates confirmed orders through a PostgreSQL RPC that calculates the fee server-side and writes items plus optional received-deposit ledger row atomically.
-- [x] Admin can update the current order workflow status.
-- [x] Admin can register actual physical units, attach photo URLs and manage unit status.
-- [x] Admin can record deposit, settlement, shipping and refund ledger entries with proof URL references.
-- [x] Admin can record Shopee username confirmation and shipment courier/tracking/status.
-- [x] Admin can register operating expenses and review recorded totals.
-- [x] Admin records deposit, settlement, shipping and refund entries through an admin-only database RPC; order payment status is recalculated from the ledger.
-- [x] Admin can record Shopee username confirmation and update unit/order workflow statuses.
-- [ ] Add direct private Supabase Storage uploads for unit photos and payment proof documents.
-- [ ] Replace external photo/proof URL references with private Supabase Storage uploads and policies.
+### Slice 2 — Admin workspace and operations
+- [x] Private login route and profile-role gate.
+- [x] Admin dashboard, catalog management, physical unit registration, request tracker and order manager.
+- [x] Register actual unit code, model/variant, price, condition, photo URL and stock status.
+- [x] Create confirmed orders through an admin-only PostgreSQL RPC; server recalculates fee and atomically stores items and an optional actual deposit.
+- [x] Reserve a selected physical unit in the same order transaction and validate that it matches the selected catalog product.
+- [x] Record deposit, settlement, shipping payment and refund ledger entries; database recalculates net payment status.
+- [x] Record optional payment-proof URL references.
+- [x] Record Shopee checkout URL and confirmed Shopee username.
+- [x] Record courier, tracking number and shipment state.
+- [x] Record operating expenses and review the recorded total.
+- [ ] Add private Supabase Storage upload for actual unit photos and payment-proof documents.
 
-### Slice 3 — Operational workflow
-- [ ] Request matching to actual units.
-- [ ] Buyer/order details and item-level fee calculation.
-- [ ] Payment ledger and deposit/refund/carry-forward controls after business decisions.
-- [ ] Shopee link and username confirmation.
-- [ ] Shipment, tracking and expense management.
+### Slice 3 — Further workflow refinement
+- [ ] Link request records directly to matched unit IDs and prefill final order data.
+- [ ] Improve cancellation handling and unit-release/reassignment controls.
+- [ ] Add filters, pagination and report exports for large operational datasets.
+- [ ] Add a customer-facing order status page only after the admin workflow is stable.
 
-### Slice 4 — Verification and release
-- [ ] Apply migrations in a disposable Supabase project.
-- [ ] Verify anonymous/admin RLS matrix and role escalation denial.
-- [ ] Run unit, typecheck, lint, production build and browser journeys.
-- [ ] Configure Vercel environment variables and preview deployment.
+### Slice 4 — Deployment and release verification
+- [x] Run GitHub Actions typecheck, fee unit tests and production build successfully (latest verified run: #36).
+- [ ] Apply migration and seed in a disposable Supabase project.
+- [ ] Verify anonymous/customer/admin RLS matrix and role-escalation denial against a live Supabase project.
+- [ ] Run browser journeys against configured Supabase.
+- [ ] Configure Vercel environment variables and create a preview deployment.
 - [ ] Run independent evaluator pass; do not promote production before P0 acceptance.
 
 ## Verification record
 
-The repository was empty before initialization. GitHub file creation confirms commits were accepted; it does not prove that the application builds or that Supabase policies have been applied. Runtime checks remain unrun until the project is installed and connected to a Supabase environment.
+The repository was empty before initialization. GitHub Actions run #36 passed dependency installation, TypeScript typecheck, unit tests and production build. This validates the frontend build and fee unit tests, but GitHub CI does not apply the Supabase migration or validate live RLS. No live Supabase project, admin account, WhatsApp number or Vercel deployment has been configured from this workspace yet.

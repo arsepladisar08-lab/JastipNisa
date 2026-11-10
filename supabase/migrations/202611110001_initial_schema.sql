@@ -428,6 +428,9 @@ begin
     v_unit_price := coalesce(nullif(v_item ->> 'unit_price', '')::numeric, 0);
 
     if v_unit_id is not null then
+      if v_quantity <> 1 then
+        raise exception 'A physical unit can only be assigned to a single-quantity item' using errcode = '22023';
+      end if;
       select status into v_unit_status
       from public.units where id = v_unit_id for update;
       if not found or v_unit_status <> 'available' then
@@ -464,3 +467,80 @@ $$;
 
 revoke all on function public.create_order(jsonb) from public;
 grant execute on function public.create_order(jsonb) to authenticated;
+
+
+-- Add a payment/refund ledger entry and recalculate the order balance atomically.
+-- Refunds and settlement amounts are entered explicitly by an admin; the function
+-- does not infer a deposit percentage or an unavailable-item refund policy.
+create or replace function public.record_order_payment(
+  p_order_id uuid,
+  p_amount numeric,
+  p_payment_type text default 'settlement',
+  p_method text default 'bank_transfer',
+  p_notes text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_total numeric(12,2);
+  v_current_net numeric(12,2);
+  v_new_net numeric(12,2);
+  v_has_settlement boolean;
+begin
+  if not public.is_admin() then
+    raise exception 'Admin access required' using errcode = '42501';
+  end if;
+  if p_amount is null or p_amount <= 0 then
+    raise exception 'Payment amount must be greater than zero' using errcode = '22023';
+  end if;
+  if p_payment_type not in ('deposit', 'settlement', 'shipping', 'refund') then
+    raise exception 'Unsupported payment type' using errcode = '22023';
+  end if;
+
+  select total_amount into v_total
+  from public.orders where id = p_order_id for update;
+  if not found then
+    raise exception 'Order not found' using errcode = 'P0002';
+  end if;
+
+  select coalesce(sum(case when payment_type = 'refund' then -amount else amount end), 0)
+    into v_current_net
+  from public.payments
+  where order_id = p_order_id;
+
+  if p_payment_type = 'refund' then
+    if p_amount > v_current_net then
+      raise exception 'Refund cannot exceed the net amount received' using errcode = '22023';
+    end if;
+    v_new_net := v_current_net - p_amount;
+  else
+    if v_current_net + p_amount > v_total then
+      raise exception 'Payment would exceed the order total' using errcode = '22023';
+    end if;
+    v_new_net := v_current_net + p_amount;
+  end if;
+
+  insert into public.payments (order_id, amount, payment_type, method, received_at, notes)
+  values (p_order_id, p_amount, p_payment_type, coalesce(nullif(p_method, ''), 'bank_transfer'), now(), nullif(p_notes, ''));
+
+  select exists (
+    select 1 from public.payments
+    where order_id = p_order_id and payment_type in ('settlement', 'shipping')
+  ) into v_has_settlement;
+
+  update public.orders
+  set payment_status = case
+    when v_new_net <= 0 then 'unpaid'
+    when v_new_net >= v_total then 'paid'
+    when v_has_settlement then 'partially_paid'
+    else 'deposit_received'
+  end
+  where id = p_order_id;
+end;
+$$;
+
+revoke all on function public.record_order_payment(uuid, numeric, text, text, text) from public;
+grant execute on function public.record_order_payment(uuid, numeric, text, text, text) to authenticated;

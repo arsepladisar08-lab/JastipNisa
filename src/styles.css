@@ -558,3 +558,30 @@ td small { margin-top: 4px; color: #a0948b; font-size: 8px; }
   .request-form-deposit { grid-template-columns: 1fr; }
   .request-form-deposit .request-proof-field { grid-column: auto; }
 }
+
+.admin-inline-form input[type="file"],.order-form-grid input[type="file"],.payment-inline-form input[type="file"] {
+  height: auto;
+  min-height: 38px;
+  padding: 8px;
+  border-style: dashed;
+  background: #fffdfa;
+  color: #8b7d74;
+  font-size: 9px;
+}
+.admin-inline-form input[type="file"]::file-selector-button,
+.order-form-grid input[type="file"]::file-selector-button,
+.payment-inline-form input[type="file"]::file-selector-button {
+  margin-right: 8px;
+  padding: 6px 9px;
+  border: 0;
+  background: #f3e7e5;
+  color: #9c6269;
+  font-size: 8px;
+  cursor: pointer;
+}
+.table-muted { color: #a0958c; font-size: 8px; }
+.payment-proof-link { margin-top: 4px; font-size: 8px; }
+.payment-inline-form { width: min(280px, 30vw); }
+@media (max-width: 640px) {
+  .payment-inline-form { width: min(245px, 64vw); }
+}

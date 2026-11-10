@@ -520,3 +520,11 @@ td small { margin-top: 4px; color: #a0948b; font-size: 8px; }
   .order-item-editor .remove-item { grid-column: 4; grid-row: 1; }
   .shopee-confirm-field { grid-template-columns: minmax(0,1fr); }
 }
+
+.payment-inline-form { display: grid; width: min(260px, 28vw); gap: 5px; margin-top: 8px; padding: 8px; border: 1px solid #eee6de; background: #fbf8f5; white-space: normal; }
+.payment-inline-form input,.payment-inline-form select { width: 100%; min-width: 0; height: 28px; padding: 0 6px; border: 1px solid #e7dfd7; background: white; color: #70645c; font-size: 8px; }
+.payment-inline-form button { min-height: 26px; border: 0; background: #f1e1e1; color: var(--rose); font-size: 8px; cursor: pointer; }
+.payment-inline-form button:first-of-type { background: var(--ink); color: white; }
+@media (max-width: 640px) {
+  .payment-inline-form { width: min(225px, 58vw); }
+}

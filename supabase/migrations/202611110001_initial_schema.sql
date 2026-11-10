@@ -126,6 +126,11 @@ create table if not exists public.requests (
   requested_variant text,
   notes text,
   status text not null default 'new' check (status in ('new', 'deposit_received', 'searching', 'found', 'not_found', 'converted', 'cancelled')),
+  deposit_amount numeric(12,2) not null default 0 check (deposit_amount >= 0),
+  deposit_method text not null default 'bank_transfer',
+  deposit_proof_url text,
+  deposit_payment_status text not null default 'not_received' check (deposit_payment_status in ('not_received', 'awaiting_verification', 'verified', 'applied_to_order', 'refunded', 'rejected')),
+  deposit_received_at timestamptz,
   actual_photo_urls text[] not null default '{}',
   admin_notes text,
   created_at timestamptz not null default now(),
@@ -135,6 +140,7 @@ create table if not exists public.requests (
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_code text not null unique,
+  source_request_id uuid references public.requests(id) on delete set null,
   buyer_id uuid references public.buyers(id) on delete set null,
   customer_name text not null,
   customer_phone text not null,
@@ -347,6 +353,12 @@ declare
   v_discount numeric(12,2) := 0;
   v_total numeric(12,2) := 0;
   v_deposit numeric(12,2) := 0;
+  v_source_request_id uuid;
+  v_request_deposit numeric(12,2);
+  v_request_proof_url text;
+  v_request_method text;
+  v_request_payment_status text;
+  v_request_product_id uuid;
   v_quantity integer;
   v_unit_price numeric(12,2);
   v_item jsonb;
@@ -384,6 +396,35 @@ begin
   v_shipping_fee := coalesce(nullif(p_payload ->> 'shipping_fee', '')::numeric, 0);
   v_discount := coalesce(nullif(p_payload ->> 'discount', '')::numeric, 0);
   v_deposit := coalesce(nullif(p_payload ->> 'deposit_amount', '')::numeric, 0);
+  v_source_request_id := nullif(p_payload ->> 'source_request_id', '')::uuid;
+
+  if v_source_request_id is not null then
+    select deposit_amount, deposit_proof_url, deposit_method,
+           deposit_payment_status, product_id
+      into v_request_deposit, v_request_proof_url, v_request_method,
+           v_request_payment_status, v_request_product_id
+    from public.requests
+    where id = v_source_request_id
+    for update;
+
+    if not found then
+      raise exception 'Source request not found' using errcode = 'P0002';
+    end if;
+    if v_request_payment_status <> 'verified' or v_request_deposit <= 0 then
+      raise exception 'Source request deposit must be verified before order conversion' using errcode = '22023';
+    end if;
+    if v_request_product_id is not null and not exists (
+      select 1 from jsonb_array_elements(p_payload -> 'items') item
+      where nullif(item ->> 'product_id', '')::uuid = v_request_product_id
+    ) then
+      raise exception 'Order items must include the product requested in the source request' using errcode = '22023';
+    end if;
+    if nullif(p_payload ->> 'deposit_amount', '') is not null
+       and (p_payload ->> 'deposit_amount')::numeric <> v_request_deposit then
+      raise exception 'Deposit amount must match the verified source request deposit' using errcode = '22023';
+    end if;
+    v_deposit := v_request_deposit;
+  end if;
 
   if v_shipping_fee < 0 or v_discount < 0 or v_deposit < 0 then
     raise exception 'Amounts cannot be negative' using errcode = '22023';
@@ -420,11 +461,11 @@ begin
   v_order_code := 'JN-' || to_char(now(), 'YYMMDD') || '-' || lpad(nextval('public.order_code_seq')::text, 6, '0');
 
   insert into public.orders (
-    order_code, customer_name, customer_phone, shipping_address,
+    order_code, source_request_id, customer_name, customer_phone, shipping_address,
     checkout_method, shopee_checkout_url, product_subtotal, product_count,
     jastip_fee, shipping_fee, discount, total_amount, status, payment_status, admin_notes
   ) values (
-    v_order_code, v_customer_name, v_customer_phone, v_shipping_address,
+    v_order_code, v_source_request_id, v_customer_name, v_customer_phone, v_shipping_address,
     v_checkout_method, nullif(p_payload ->> 'shopee_checkout_url', ''),
     v_product_subtotal, v_product_count, v_jastip_fee, v_shipping_fee,
     v_discount, v_total, 'awaiting_payment',
@@ -478,10 +519,17 @@ begin
     insert into public.payments (order_id, amount, payment_type, method, proof_url, received_at, notes)
     values (
       v_order_id, v_deposit, 'deposit',
-      coalesce(nullif(p_payload ->> 'payment_method', ''), 'bank_transfer'),
-      nullif(p_payload ->> 'payment_proof_url', ''),
-      now(), 'Deposit dicatat saat order dibuat'
+      coalesce(v_request_method, nullif(p_payload ->> 'payment_method', ''), 'bank_transfer'),
+      coalesce(v_request_proof_url, nullif(p_payload ->> 'payment_proof_url', '')),
+      now(), 'Deposit dari request dicatat pada order final'
     );
+  end if;
+
+  if v_source_request_id is not null then
+    update public.requests
+    set deposit_payment_status = 'applied_to_order',
+        status = 'converted'
+    where id = v_source_request_id;
   end if;
 
   return query select v_order_id, v_order_code;

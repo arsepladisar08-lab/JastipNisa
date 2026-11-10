@@ -757,7 +757,9 @@ function OrdersManager() {
   const [paymentMethodEntry, setPaymentMethodEntry] = useState('bank_transfer')
   const [paymentNotes, setPaymentNotes] = useState('')
   const [paymentProofUrl, setPaymentProofUrl] = useState('')
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null)
   const [depositProofUrl, setDepositProofUrl] = useState('')
+  const [depositProofFile, setDepositProofFile] = useState<File | null>(null)
   const [shipmentOrderId, setShipmentOrderId] = useState<string | null>(null)
   const [shipmentCourier, setShipmentCourier] = useState('')
   const [shipmentTracking, setShipmentTracking] = useState('')
@@ -846,7 +848,26 @@ function OrdersManager() {
       setNotice('Nominal deposit tidak boleh negatif atau melebihi total order.')
       return
     }
+    if (deposit > 0 && !sourceRequestId && paymentMethod !== 'cash' && !depositProofUrl.trim() && !depositProofFile) {
+      setNotice('Lampirkan bukti deposit atau masukkan URL bukti untuk pembayaran non-tunai.')
+      return
+    }
+    if (depositProofFile && (!['image/jpeg','image/png','image/webp','application/pdf'].includes(depositProofFile.type) || depositProofFile.size > 10 * 1024 * 1024)) {
+      setNotice('Bukti deposit harus JPG, PNG, WebP, atau PDF dengan ukuran maksimal 10 MB.')
+      return
+    }
     setSaving(true)
+    let uploadedDepositProofPath = ''
+    if (depositProofFile && !sourceRequestId) {
+      const safeName = depositProofFile.name.replace(/[^a-zA-Z0-9._-]/g, '-')
+      uploadedDepositProofPath = 'orders/deposits/' + crypto.randomUUID() + '/' + safeName
+      const { error: uploadError } = await supabase.storage.from('payment-proofs').upload(uploadedDepositProofPath, depositProofFile, {
+        upsert: false, contentType: depositProofFile.type, cacheControl: '3600',
+      })
+      if (uploadError) {
+        setSaving(false); setNotice('Bukti deposit gagal diunggah. Periksa bucket privat dan akses admin.'); return
+      }
+    }
     const payload = {
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
@@ -858,7 +879,7 @@ function OrdersManager() {
       discount: discountValue,
       deposit_amount: deposit,
       payment_method: paymentMethod,
-      payment_proof_url: depositProofUrl.trim() || null,
+      payment_proof_url: uploadedDepositProofPath || depositProofUrl.trim() || null,
       items: items.map(item => ({
         product_id: item.productId || null,
         product_name_snapshot: item.productName,
@@ -871,6 +892,7 @@ function OrdersManager() {
     const { data, error } = await supabase.rpc('create_order', { p_payload: payload })
     setSaving(false)
     if (error) {
+      if (uploadedDepositProofPath) await supabase.storage.from('payment-proofs').remove([uploadedDepositProofPath])
       setNotice('Order gagal dibuat. Pastikan migration terbaru sudah diterapkan dan data pesanan valid.')
       return
     }
@@ -878,7 +900,7 @@ function OrdersManager() {
     setNotice('Order ' + (created?.order_code || '') + ' berhasil dibuat. Fee dihitung ulang oleh database.')
     setCustomerName(''); setCustomerPhone(''); setShippingAddress('')
     setSourceRequestId('')
-    setShippingFee('0'); setDiscount('0'); setDepositAmount(''); setDepositProofUrl('')
+    setShippingFee('0'); setDiscount('0'); setDepositAmount(''); setDepositProofUrl(''); setDepositProofFile(null)
     setCheckoutMethod('manual'); setShopeeLink('')
     setItems([{ key: 'item-' + Date.now(), productId: '', productName: '', variant: '', quantity: 1, unitPrice: '', unitId: '' }])
     await refresh()
@@ -923,22 +945,38 @@ function OrdersManager() {
       setNotice('Masukkan nominal pembayaran atau refund yang valid.')
       return
     }
+    if (paymentProofFile && (!['image/jpeg','image/png','image/webp','application/pdf'].includes(paymentProofFile.type) || paymentProofFile.size > 10 * 1024 * 1024)) {
+      setNotice('Bukti pembayaran harus JPG, PNG, WebP, atau PDF dengan ukuran maksimal 10 MB.')
+      return
+    }
     setUpdatingOrder(orderId); setNotice('')
+    let uploadedPaymentProofPath = ''
+    if (paymentProofFile) {
+      const safeName = paymentProofFile.name.replace(/[^a-zA-Z0-9._-]/g, '-')
+      uploadedPaymentProofPath = 'orders/' + orderId + '/' + crypto.randomUUID() + '-' + safeName
+      const { error: uploadError } = await supabase.storage.from('payment-proofs').upload(uploadedPaymentProofPath, paymentProofFile, {
+        upsert: false, contentType: paymentProofFile.type, cacheControl: '3600',
+      })
+      if (uploadError) {
+        setUpdatingOrder(null); setNotice('Bukti pembayaran gagal diunggah.'); return
+      }
+    }
     const { error } = await supabase.rpc('record_order_payment', {
       p_order_id: orderId,
       p_amount: amount,
       p_payment_type: paymentType,
       p_method: paymentMethodEntry,
       p_notes: paymentNotes.trim() || null,
-      p_proof_url: paymentProofUrl.trim() || null,
+      p_proof_url: uploadedPaymentProofPath || paymentProofUrl.trim() || null,
     })
     setUpdatingOrder(null)
     if (error) {
+      if (uploadedPaymentProofPath) await supabase.storage.from('payment-proofs').remove([uploadedPaymentProofPath])
       setNotice('Pembayaran gagal dicatat. Periksa nominal, sisa tagihan, dan migration terbaru.')
       return
     }
     setNotice('Ledger pembayaran berhasil diperbarui.')
-    setPaymentOrderId(null); setPaymentAmount(''); setPaymentNotes(''); setPaymentProofUrl('')
+    setPaymentOrderId(null); setPaymentAmount(''); setPaymentNotes(''); setPaymentProofUrl(''); setPaymentProofFile(null)
     setPaymentType('settlement')
     await refresh()
   }
@@ -1045,7 +1083,8 @@ function OrdersManager() {
               <label>Ongkir (Rp)<input type="number" min="0" value={shippingFee} onChange={e => setShippingFee(e.target.value)} /></label>
               <label>Diskon (Rp)<input type="number" min="0" value={discount} onChange={e => setDiscount(e.target.value)} /></label>
               <label>Deposit diterima (Rp)<input type="number" min="0" max={total} value={depositAmount} readOnly={Boolean(sourceRequestId)} onChange={e => setDepositAmount(e.target.value)} placeholder="Isi jika sudah diterima" /></label>
-              <label>Link bukti deposit (opsional)<input type="url" value={depositProofUrl} readOnly={Boolean(sourceRequestId)} onChange={e => setDepositProofUrl(e.target.value)} placeholder="Link Drive / storage privat" /></label>
+              <label>Upload bukti deposit (JPG/PNG/WebP/PDF)<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={Boolean(sourceRequestId)} onChange={e => setDepositProofFile(e.target.files?.[0] || null)} /></label>
+              <label>Atau URL bukti eksternal<input type="url" value={depositProofUrl} readOnly={Boolean(sourceRequestId)} onChange={e => setDepositProofUrl(e.target.value)} placeholder="https://..." /></label>
               <label>Metode pembayaran<select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option value="bank_transfer">Transfer bank</option><option value="qris">QRIS</option><option value="cash">Tunai</option><option value="shopee">Shopee</option></select></label>
             </div>
             <p className="order-helper">Deposit dicatat sesuai nominal yang benar-benar diterima. Tidak ada nominal atau persentase deposit otomatis.</p>
@@ -1087,7 +1126,8 @@ function OrdersManager() {
                     <select value={paymentType} onChange={e => setPaymentType(e.target.value as 'deposit' | 'settlement' | 'shipping' | 'refund')} aria-label="Jenis pembayaran"><option value="deposit">Deposit</option><option value="settlement">Pelunasan</option><option value="shipping">Ongkir</option><option value="refund">Refund</option></select>
                     <select value={paymentMethodEntry} onChange={e => setPaymentMethodEntry(e.target.value)} aria-label="Metode pembayaran"><option value="bank_transfer">Transfer bank</option><option value="qris">QRIS</option><option value="cash">Tunai</option><option value="shopee">Shopee</option></select>
                     <input value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} placeholder="Catatan (opsional)" aria-label="Catatan pembayaran" />
-                    <input type="url" value={paymentProofUrl} onChange={e => setPaymentProofUrl(e.target.value)} placeholder="Link bukti (opsional)" aria-label="Link bukti pembayaran" />
+                    <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" aria-label="Upload bukti pembayaran" onChange={e => setPaymentProofFile(e.target.files?.[0] || null)} />
+                    <input type="url" value={paymentProofUrl} onChange={e => setPaymentProofUrl(e.target.value)} placeholder="Atau URL bukti eksternal" aria-label="Link bukti pembayaran" />
                     <button type="button" disabled={updatingOrder === String(order.id)} onClick={() => void recordPayment(String(order.id))}>Simpan</button>
                     <button type="button" onClick={() => setPaymentOrderId(null)}>Batal</button>
                   </div> : <button type="button" className="small-action" onClick={() => { setPaymentOrderId(String(order.id)); setPaymentAmount(''); setPaymentNotes('') }}>Catat pembayaran</button>}

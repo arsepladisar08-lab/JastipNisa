@@ -24,6 +24,11 @@ function updateRequestItemAsAdmin_(sessionToken, payload) {
       actual_condition: cleanText_(payload.actualCondition || '', 1000, 'Catatan kondisi'),
       updated_at: isoNow_()
     }
+    if (current === 'found' && nextStatus === 'searching') {
+      // A new search cycle invalidates the previous photo approval.
+      patch.customer_decision = ''
+      patch.actual_photo_file_ids_json = '[]'
+    }
     updateRecord_('Requests', 'request_id', requestId, patch)
 
     var groupId = String(request.request_group_id)
@@ -153,6 +158,15 @@ function createOrderAsAdmin_(sessionToken, requestGroupId) {
       }
       if (String(existingOrder.status) === 'creating') {
         return recoverOrderCreation_(session, requestGroupId, existingOrder)
+      }
+      // Repair the parent status if a prior run finished the order row but
+      // stopped before updating the request group pointer.
+      if (String(group.status) !== 'order_created' || String(group.order_id || '') !== String(existingOrder.order_id)) {
+        updateRecord_('Request_Groups', 'request_group_id', requestGroupId, {
+          order_id: existingOrder.order_id,
+          status: 'order_created',
+          updated_at: isoNow_()
+        })
       }
       return orderSummary_(existingOrder, true)
     }
@@ -528,18 +542,31 @@ function addExpenseAsAdmin_(sessionToken, payload) {
   if (!Number.isFinite(amount) || amount <= 0 || !category || !/^\d{4}-\d{2}-\d{2}$/.test(occurredAt)) {
     throw publicError_('INVALID_EXPENSE', 'Periksa kategori, nominal, dan tanggal pengeluaran.')
   }
-  var expenseId = newId_()
-  appendRecords_('Expenses', [{
-    expense_id: expenseId,
-    occurred_at: occurredAt,
-    category: category,
-    description: cleanText_(payload.description || '', 500, 'Keterangan'),
-    amount: amount,
-    order_id: cleanText_(payload.orderId || '', 100, 'Order'),
-    event_id: '',
-    created_by: session.role,
-    created_at: isoNow_()
-  }])
-  appendAudit_('admin', session.role, 'expense_created', 'expense', expenseId, { amount: amount, category: category })
-  return { expenseId: expenseId }
+  return withScriptLock_(function () {
+    var idempotencyKey = cleanText_(payload.idempotencyKey || '', 100, 'ID transaksi')
+    if (idempotencyKey && idempotencyKey.length < 16) {
+      throw publicError_('INVALID_IDEMPOTENCY_KEY', 'ID transaksi tidak valid.')
+    }
+    if (idempotencyKey) {
+      var duplicate = readRecords_('Expenses').filter(function (row) {
+        return String(row.idempotency_key || '') === idempotencyKey
+      })[0]
+      if (duplicate) return { expenseId: String(duplicate.expense_id), reused: true }
+    }
+    var expenseId = newId_()
+    appendRecords_('Expenses', [{
+      expense_id: expenseId,
+      occurred_at: occurredAt,
+      category: category,
+      description: cleanText_(payload.description || '', 500, 'Keterangan'),
+      amount: amount,
+      order_id: cleanText_(payload.orderId || '', 100, 'Order'),
+      event_id: '',
+      created_by: session.role,
+      created_at: isoNow_(),
+      idempotency_key: idempotencyKey
+    }])
+    appendAudit_('admin', session.role, 'expense_created', 'expense', expenseId, { amount: amount, category: category })
+    return { expenseId: expenseId, reused: false }
+  })
 }

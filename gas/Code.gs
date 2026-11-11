@@ -312,6 +312,7 @@ function apiAdminListRequests(sessionToken, statusFilter) {
       var buyer = buyers.filter(function (row) { return String(row.buyer_id) === String(group.buyer_id) })[0] || {}
       return {
         requestGroupId: String(group.request_group_id),
+        orderId: String(group.order_id || ''),
         requestCode: String(group.request_code),
         status: String(group.status),
         createdAt: String(group.created_at),

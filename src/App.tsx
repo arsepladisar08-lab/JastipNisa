@@ -1170,7 +1170,7 @@ function OrdersManager() {
                   </div> : <button type="button" className="small-action" onClick={() => { setPaymentOrderId(String(order.id)); setPaymentAmount(''); setPaymentNotes('') }}>Catat pembayaran</button>}
                 </td>
                 <td>
-                  <select className="order-status-select" aria-label={`Status order ${String(order.order_code)}`} disabled={updatingOrder === String(order.id)} value={String(order.status)} onChange={e => void changeOrderStatus(String(order.id), e.target.value)}>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+                  <select className="order-status-select" aria-label={`Status order ${String(order.order_code)}`} disabled={updatingOrder === String(order.id)} value={String(order.status)} onChange={e => void changeOrderStatus(String(order.id), e.target.value)}>{statuses.map(([value, label]) => <option key={value} value={value} disabled={value === 'shipped' || value === 'completed'}>{label}{value === 'shipped' || value === 'completed' ? ' · lewat Pengiriman' : ''}</option>)}</select>
                   <button type="button" className="small-action" onClick={() => {
                     const shipment = order.shipments as Record<string, unknown> | null
                     setShipmentOrderId(shipmentOrderId === String(order.id) ? null : String(order.id))

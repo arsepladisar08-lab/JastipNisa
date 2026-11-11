@@ -193,3 +193,23 @@ a{color:inherit;text-decoration:none}
 .jn-order-form .jn-button{justify-self:start}
 @media(max-width:900px){.jn-catalog-admin-grid,.jn-orders-grid{grid-template-columns:1fr}}
 @media(max-width:620px){.jn-catalog-manager{padding:15px}.jn-catalog-row{grid-template-columns:1fr auto}.jn-catalog-row .jn-status{justify-self:start}.jn-catalog-row button{grid-column:2;grid-row:1/3}.jn-order-info{grid-template-columns:1fr 1fr 1fr}.jn-order-card{padding:13px}}
+
+.jn-finance-manager{padding:24px;border:1px solid #e9e6dd;border-radius:18px;background:#f1efe7}
+.jn-finance-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.jn-finance-grid>div{display:grid;gap:8px;padding:16px;border-radius:12px;background:#fff;border:1px solid #ece9e0}
+.jn-finance-grid small{font-size:9px;line-height:1.4;color:#818378}
+.jn-finance-grid strong{font-family:Georgia,serif;font-size:19px;font-weight:500;color:#344434;overflow-wrap:anywhere}
+.jn-finance-disclaimer{font-size:10px;line-height:1.6;color:#77796e;margin:13px 0 19px}
+.jn-expense-form{margin:0;padding:18px;display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr auto;gap:10px;align-items:end}
+.jn-expense-form>div{align-self:center}
+.jn-expense-form h3,.jn-expense-history h3{font-family:Georgia,serif;font-size:22px;font-weight:500;margin:5px 0}
+.jn-expense-form .jn-button{white-space:nowrap}
+.jn-expense-history{margin-top:18px}
+.jn-expense-history .jn-section-heading{margin-bottom:10px}
+.jn-expense-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;background:white;border:1px solid #ece9e0;border-radius:10px;margin-top:7px}
+.jn-expense-row>div{display:grid;gap:4px}
+.jn-expense-row>div strong{font-size:11px;text-transform:capitalize}
+.jn-expense-row small{font-size:9px;color:#85877c}
+.jn-expense-row>strong{font-size:11px;white-space:nowrap}
+@media(max-width:1000px){.jn-expense-form{grid-template-columns:repeat(2,minmax(0,1fr))}.jn-expense-form>div{grid-column:1/-1}.jn-finance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.jn-finance-manager{padding:15px}.jn-expense-form{grid-template-columns:1fr}.jn-expense-form>div{grid-column:auto}.jn-finance-grid>div{padding:12px}.jn-finance-grid strong{font-size:16px}}

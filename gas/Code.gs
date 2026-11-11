@@ -228,7 +228,8 @@ function apiAdminListRequests(sessionToken, statusFilter) {
             method: String(payment.method || ''),
             verificationStatus: String(payment.verification_status),
             occurredAt: String(payment.occurred_at || ''),
-            notes: String(payment.notes || '')
+            notes: String(payment.notes || ''),
+            hasProof: Boolean(payment.proof_file_id)
           }
         }),
         verifiedDepositAmount: payments.filter(function (payment) {

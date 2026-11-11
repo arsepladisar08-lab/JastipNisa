@@ -43,6 +43,10 @@ React akan di-build menjadi satu file HTML yang disajikan melalui Apps Script HT
 - [Audit referensi GAS](docs/GAS_REFERENCE_MIGRATION.md)
 - [PRD awal — historis](docs/PRD.md)
 
+## Panduan pengembangan berkelanjutan
+
+- [Development Control](docs/DEVELOPMENT_CONTROL.md) — status audit, urutan kerja, aturan perubahan, dan workflow hemat konteks AI.
+
 ## Kondisi development saat ini
 
 Entry default pada branch SOWAN masih memakai Supabase. Pada branch migrasi, entry GAS khusus dapat diuji/dibuild melalui perintah tambahan di bawah. Perintah npm standar masih memeriksa kompatibilitas baseline:

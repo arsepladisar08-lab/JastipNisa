@@ -224,8 +224,16 @@ function submitCustomerOrderDetails_(accessToken, details) {
   }
 
   return withScriptLock_(function () {
+    // The token may have been revoked while this request waited for the lock.
+    var currentGroup = findRequestGroupByToken_(accessToken)
+    if (String(currentGroup.request_group_id) !== String(group.request_group_id)) {
+      throw publicError_('ACCESS_DENIED', 'Tautan akses tidak ditemukan atau sudah dinonaktifkan.')
+    }
+    if (currentGroup.order_id || ['order_creating', 'order_created'].indexOf(String(currentGroup.status)) !== -1) {
+      throw publicError_('INVALID_STATE', 'Order final sudah dibuat. Hubungi admin untuk perubahan data.')
+    }
     var requests = readRecords_('Requests').filter(function (row) {
-      return String(row.request_group_id) === String(group.request_group_id)
+      return String(row.request_group_id) === String(currentGroup.request_group_id)
     })
     if (!requests.length || requests.some(function (row) {
       return String(row.status) !== 'found' || String(row.customer_decision) !== 'approved'
@@ -233,7 +241,7 @@ function submitCustomerOrderDetails_(accessToken, details) {
       throw publicError_('ITEMS_NOT_APPROVED', 'Lengkapi persetujuan foto seluruh produk yang ditemukan sebelum mengirim format order.')
     }
 
-    var buyer = findRecord_('Buyers', 'buyer_id', group.buyer_id)
+    var buyer = findRecord_('Buyers', 'buyer_id', currentGroup.buyer_id)
     if (!buyer) throw publicError_('BUYER_NOT_FOUND', 'Data pelanggan tidak ditemukan.')
     updateRecord_('Buyers', 'buyer_id', group.buyer_id, {
       name: name,
@@ -242,11 +250,11 @@ function submitCustomerOrderDetails_(accessToken, details) {
       address: address,
       updated_at: isoNow_()
     })
-    updateRecord_('Request_Groups', 'request_group_id', group.request_group_id, {
+    updateRecord_('Request_Groups', 'request_group_id', currentGroup.request_group_id, {
       status: 'customer_details_received',
       updated_at: isoNow_()
     })
-    appendAudit_('customer', group.request_group_id, 'order_details_submitted', 'request_group', group.request_group_id, {})
+    appendAudit_('customer', currentGroup.request_group_id, 'order_details_submitted', 'request_group', currentGroup.request_group_id, {})
     return { saved: true, status: 'customer_details_received' }
   })
 }
@@ -255,22 +263,33 @@ function confirmCustomerShopee_(accessToken, username) {
   var group = findRequestGroupByToken_(accessToken)
   var value = cleanText_(username, 80, 'Nama akun Shopee')
   if (value.length < 2) throw publicError_('INVALID_SHOPEE_USERNAME', 'Nama akun Shopee perlu diisi.')
-  var orders = readRecords_('Orders').filter(function (row) {
-    return String(row.request_group_id) === String(group.request_group_id)
-  })
-  if (!orders.length || !orders[0].shopee_checkout_url) {
-    throw publicError_('SHOPEE_NOT_READY', 'Link checkout Shopee belum diberikan admin.')
-  }
-  withScriptLock_(function () {
+
+  return withScriptLock_(function () {
+    var currentGroup = findRequestGroupByToken_(accessToken)
+    if (String(currentGroup.request_group_id) !== String(group.request_group_id)) {
+      throw publicError_('ACCESS_DENIED', 'Tautan akses tidak ditemukan atau sudah dinonaktifkan.')
+    }
+    var orders = readRecords_('Orders').filter(function (row) {
+      return String(row.request_group_id) === String(currentGroup.request_group_id)
+    })
+    if (!orders.length || !orders[0].shopee_checkout_url) {
+      throw publicError_('SHOPEE_NOT_READY', 'Link checkout Shopee belum diberikan admin.')
+    }
+    if (['cancelled', 'completed'].indexOf(String(orders[0].status)) !== -1) {
+      throw publicError_('INVALID_STATE', 'Order sudah ditutup dan tidak menerima perubahan akun Shopee.')
+    }
+    if (String(orders[0].shopee_username || '') === value) {
+      return { saved: true, reused: true }
+    }
     updateRecord_('Orders', 'order_id', orders[0].order_id, {
       shopee_username: value,
       updated_at: isoNow_()
     })
-    updateRecord_('Buyers', 'buyer_id', group.buyer_id, {
+    updateRecord_('Buyers', 'buyer_id', currentGroup.buyer_id, {
       shopee_username: value,
       updated_at: isoNow_()
     })
-    appendAudit_('customer', group.request_group_id, 'shopee_username_confirmed', 'order', orders[0].order_id, {})
+    appendAudit_('customer', currentGroup.request_group_id, 'shopee_username_confirmed', 'order', orders[0].order_id, {})
+    return { saved: true, reused: false }
   })
-  return { saved: true }
 }

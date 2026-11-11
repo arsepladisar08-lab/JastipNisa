@@ -947,6 +947,23 @@ function AdminPage() {
     }
   }
 
+  async function reviewCancellation(
+    cancellationRequestId: string,
+    decision: 'accepted' | 'rejected',
+    reviewNote: string,
+  ) {
+    setError('')
+    try {
+      const result = await reviewAdminCancellationRequest(sessionToken, cancellationRequestId, decision, reviewNote)
+      setNotice(result.executionDeferred
+        ? 'Permintaan diterima untuk tindak lanjut manual. Status order, stok, dan ledger tidak diubah.'
+        : 'Keputusan review pembatalan tersimpan.')
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Review pembatalan belum dapat disimpan.')
+    }
+  }
+
   async function saveExpense(form: HTMLFormElement) {
     const values = new FormData(form)
     const amount = Number(values.get('amount') || 0)
@@ -1036,6 +1053,7 @@ function AdminPage() {
       onViewProof={viewPaymentProof}
       onUpdateShipment={updateShipment}
       onSaveShopeeLink={saveShopeeLink}
+      onReviewCancellation={reviewCancellation}
     />
     <FinanceManager
       summary={financialSummary}
@@ -1208,6 +1226,44 @@ function CatalogManager({
   </section>
 }
 
+function CancellationReviewCard({
+  request,
+  onReview,
+}: {
+  request: AdminOrder['cancellationRequests'][number]
+  onReview: (requestId: string, decision: 'accepted' | 'rejected', note: string) => Promise<void>
+}) {
+  const [reviewNote, setReviewNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function submit(decision: 'accepted' | 'rejected') {
+    if (reviewNote.trim().length < 3 || busy) return
+    setBusy(true)
+    try {
+      await onReview(request.cancellationRequestId, decision, reviewNote)
+      setReviewNote('')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <article className="jn-cancellation-review">
+    <div className="jn-cancellation-history-head">
+      <strong>{displayStatus(request.status)}</strong>
+      <small>{new Date(request.createdAt).toLocaleString('id-ID')}</small>
+    </div>
+    <p>{request.reason}</p>
+    {request.reviewNote && <small>Catatan review: {request.reviewNote}</small>}
+    {request.status === 'pending' && <div className="jn-cancellation-review-actions">
+      <label className="jn-field">Catatan keputusan admin<textarea rows={2} minLength={3} maxLength={1000} required value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Jelaskan alasan keputusan atau tindak lanjut manual" /></label>
+      <div className="jn-inline-actions">
+        <button type="button" className="jn-button jn-button-primary" disabled={busy || reviewNote.trim().length < 3} onClick={() => void submit('accepted')}>Terima untuk tindak lanjut</button>
+        <button type="button" className="jn-button jn-button-outline" disabled={busy || reviewNote.trim().length < 3} onClick={() => void submit('rejected')}>Tolak permintaan</button>
+      </div>
+      <small>Menerima hanya mencatat keputusan. Jangan tandai order batal atau melakukan refund dari panel ini.</small>
+    </div>}
+    {request.status === 'accepted_pending_execution' && <p className="jn-cancellation-deferred">Diterima; menunggu penyelesaian manual. Order, unit dan pembayaran belum diubah.</p>}
+  </article>
+}
+
 function OrdersManager({
   orders,
   onAddPayment,
@@ -1215,6 +1271,7 @@ function OrdersManager({
   onViewProof,
   onUpdateShipment,
   onSaveShopeeLink,
+  onReviewCancellation,
 }: {
   orders: AdminOrder[]
   onAddPayment: (orderId: string, form: HTMLFormElement) => Promise<void>
@@ -1222,6 +1279,7 @@ function OrdersManager({
   onViewProof: (paymentId: string) => Promise<{ fileName: string; mimeType: string; base64: string }>
   onUpdateShipment: (orderId: string, form: HTMLFormElement) => Promise<void>
   onSaveShopeeLink: (orderId: string, form: HTMLFormElement) => Promise<void>
+  onReviewCancellation: (requestId: string, decision: 'accepted' | 'rejected', note: string) => Promise<void>
 }) {
   const [proofPreviews, setProofPreviews] = useState<Record<string, { fileName: string; mimeType: string; dataUrl: string }>>({})
   async function openProof(paymentId: string) {
@@ -1247,6 +1305,11 @@ function OrdersManager({
         <div className="jn-order-card-head"><div><span className="jn-eyebrow">{order.orderCode}</span><h3>{order.customerName}</h3><small>{order.customerPhone} · {new Date(order.createdAt).toLocaleString('id-ID')}</small></div><span className="jn-status">{displayStatus(order.status)}</span></div>
         <div className="jn-order-info"><div><small>Jumlah produk</small><strong>{order.productCount}</strong></div><div><small>Fee jastip</small><strong>{formatRupiah(order.fee)}</strong></div><div><small>Total order</small><strong>{formatRupiah(order.totalAmount)}</strong></div></div>
         <div className="jn-order-balance"><span>Terbayar {formatRupiah(order.totalPaid)}</span><strong>Sisa {formatRupiah(order.balance)}</strong><small>Status: {displayStatus(order.paymentStatus)}. Ongkir tidak termasuk total ini hingga biaya final ditetapkan.</small></div>
+        {order.cancellationRequests.length > 0 && <section className="jn-cancellation-review-panel">
+          <div><span className="jn-eyebrow">CANCELLATION REVIEW</span><strong>Permintaan pembatalan</strong></div>
+          {order.cancellationRequests.map((request) => <CancellationReviewCard key={request.cancellationRequestId} request={request} onReview={onReviewCancellation} />)}
+          <small>Keputusan “terima” belum membatalkan order dan tidak memicu refund atau pelepasan unit.</small>
+        </section>}
         <div className="jn-order-payments">
           <strong>Riwayat pembayaran</strong>
           {order.payments.map((payment) => <div className="jn-order-payment" key={payment.paymentId}>

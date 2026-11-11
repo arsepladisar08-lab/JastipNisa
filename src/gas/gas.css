@@ -131,3 +131,19 @@ a{color:inherit;text-decoration:none}
 .jn-finalize p{font-size:11px;color:#676b60}
 @media(max-width:760px){.jn-header{height:66px;padding:0 16px}.jn-header nav{gap:12px;font-size:10px}.jn-brand{font-size:15px}.jn-brand small{font-size:8px}.jn-main{padding:0 15px 50px}.jn-hero{grid-template-columns:1fr;padding:30px 23px;min-height:0}.jn-hero-stamp{width:135px;height:135px;margin:25px 0 0;justify-self:start}.jn-hero-stamp strong{font-size:42px}.jn-benefits{grid-template-columns:1fr;margin-bottom:40px}.jn-benefits>div{padding:14px 17px}.jn-product-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.jn-product-card>img,.jn-product-placeholder{height:155px}.jn-product-body{padding:12px}.jn-product-body h3{font-size:17px}.jn-product-actions{align-items:stretch;flex-direction:column}.jn-product-actions .jn-button{width:100%}.jn-section-heading h2{font-size:29px}.jn-form-grid{grid-template-columns:1fr}.jn-token-form{grid-template-columns:1fr}.jn-admin-fields{grid-template-columns:1fr}.jn-unit-form{grid-template-columns:1fr 1fr}.jn-unit-form button{grid-column:1/-1}.jn-stat-grid{grid-template-columns:repeat(2,1fr)}.jn-finalize{align-items:flex-start;flex-direction:column}.jn-photo-grid img{width:110px;height:110px}}
 @media(max-width:440px){.jn-header nav{gap:8px}.jn-header nav a{font-size:9px}.jn-brand{gap:7px}.jn-brand-mark{width:32px;height:32px}.jn-product-grid{grid-template-columns:1fr 1fr}.jn-product-card>img,.jn-product-placeholder{height:132px}.jn-product-body h3{font-size:15px}.jn-product-body .jn-reference-price{font-size:9px}.jn-admin-top h1,.jn-page-heading h1{font-size:34px}.jn-panel{padding:15px}.jn-portal-item-head{align-items:flex-start;flex-direction:column}}
+
+.jn-payment-panel{margin:14px 0 5px;padding:15px;background:#f7f6f1;border-radius:12px;border:1px solid #eeece5}
+.jn-payment-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.jn-payment-heading>div{display:grid;gap:4px}
+.jn-payment-heading strong,.jn-payment-form>strong{font-size:11px}
+.jn-payment-heading small,.jn-payment-row small,.jn-payment-form>small{font-size:9px;color:#818378}
+.jn-payment-list{display:grid;gap:8px;margin-top:11px}
+.jn-payment-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;background:#fff;border:1px solid #ebe9e1;border-radius:10px;padding:10px}
+.jn-payment-row>div:first-child{display:grid;gap:3px}
+.jn-payment-row>div:first-child strong{font-size:11px}
+.jn-payment-row .jn-inline-actions{grid-column:1/-1;margin:2px 0 0}
+.jn-payment-row .jn-button{min-height:33px;padding:8px 12px;font-size:9px}
+.jn-payment-form{margin-top:13px;padding-top:13px;border-top:1px solid #e5e3da;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;align-items:end}
+.jn-payment-form>strong,.jn-payment-form>small,.jn-payment-form>button{grid-column:1/-1}
+.jn-payment-form .jn-field input,.jn-payment-form .jn-field select{font-size:10px}
+@media(max-width:760px){.jn-payment-form{grid-template-columns:1fr}.jn-payment-form>strong,.jn-payment-form>small,.jn-payment-form>button{grid-column:auto}}

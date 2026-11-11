@@ -35,28 +35,39 @@ Dokumen ini adalah ringkasan operasional untuk menjaga kesinambungan sesi pengem
 - Rotasi password admin menggunakan auth version sudah ada.
 - Idempotency payload request sudah memiliki commit tersendiri.
 
-### Implementasi P0/P1 pada branch kerja (menunggu PR review)
+### P0/P1 — merged ke `SOWAN` (PR #10)
 
 - `doGet(e)` membaca `page` dan `t`, melakukan allow-list halaman serta validasi pola token, lalu menyisipkan `window.__JN_BOOT__` yang sudah di-escape.
-- `src/gas/main.tsx` memindahkan bootstrap portal/admin ke route HashRouter dan menyimpan token portal yang tervalidasi ke sessionStorage.
-- Builder tautan portal/admin ditambahkan di `src/lib/gasWebApp.ts`; token yang salah format atau token pada halaman admin ditolak.
-- Request baru dan reissue token admin menampilkan tautan portal siap salin bila URL Web App tersedia.
-- `src/lib/gasMock.ts` meniru API GAS di memori, memuat dua request group, satu order, satu pembayaran awaiting verification, dan data katalog sintetis.
-- Jalankan preview demo dengan `npm run dev:gas-demo` (port 3001). Password admin demo: `demo-admin`.
-- Mock tidak aktif di production; validator bundle GAS menolak marker kode mock bila masuk ke HTML produksi.
+- `src/gas/main.tsx` memetakan bootstrap ke HashRouter; deep link pelanggan/admin langsung ke route terkait.
+- Builder tautan portal/admin tersedia di `src/lib/gasWebApp.ts`; request baru dan reissue token admin dapat menghasilkan tautan portal siap salin.
+- `src/lib/gasMock.ts` menyediakan API mock in-memory; jalankan `npm run dev:gas-demo` (port 3001), login admin demo dengan `demo-admin`.
+- Mock hanya aktif pada Vite development dengan mode/flag eksplisit; validator build GAS menolak marker mock di bundle produksi.
 
-### Gap yang perlu ditangani
+### P2/P3 — diimplementasikan pada branch kerja ini, menunggu review dan CI
 
-1. `gas/Code.gs` → `doGet()` belum menerima parameter `page`/token. URL portal/admin yang deep-linked belum diselesaikan.
-2. `src/lib/gasClient.ts` langsung menolak `GAS_BRIDGE_UNAVAILABLE` bila `google.script.run` tidak tersedia. Local mock terisolasi belum ada.
-3. `apiAdminConfirmPayment` masih menjadi alias duplikat dari `apiAdminVerifyPayment`.
-4. Login throttle hanya berdasarkan browser ID yang dikirim client; tidak ada bukti rate limit global/per-phone untuk create request.
-5. Admin portal token saat ini ditampilkan/disalin sebagai token mentah; tautan portal siap-pakai perlu diselesaikan bersama routing deep-link.
-6. Foto portal dimuat serentak di `PortalPage.refresh`; pertimbangkan lazy loading setelah ukur dampaknya.
-7. WhatsApp button/template dan alur pembatalan belum terlihat lengkap di UI.
-8. `Database.gs` membaca sheet penuh untuk operasi lookup; optimasi hanya setelah baseline latency dicatat.
-9. CI perlu menggunakan lockfile (`npm ci`). Pastikan `package-lock.json` benar-benar tersedia pada branch sebelum mewajibkannya.
+**P2 — Security & transaction integrity**
+- Mutasi admin yang memakai `LockService` memvalidasi ulang sesi setelah lock didapat, sehingga logout/rotasi password tidak meninggalkan mutasi yang lolos hanya dari pemeriksaan awal.
+- Keputusan pelanggan divalidasi ulang bersama token dan status item di dalam lock; retry keputusan yang sama idempotent, keputusan berlawanan ditolak.
+- Penolakan item melepas unit yang masih berstatus `held` dan membersihkan alokasi request agar stok tidak tertahan.
+- Detail order dan konfirmasi username Shopee memvalidasi ulang token serta state order di dalam lock.
+- Pembayaran dan pengeluaran menyimpan fingerprint payload untuk mendeteksi idempotency key yang dipakai ulang dengan data berbeda; retry identik dipakai ulang, konflik ditolak.
+- Verifikasi pembayaran menerima retry keputusan yang sama dan menolak keputusan terminal yang berlawanan.
+- Foto pelanggan dan bukti pembayaran admin dibaca dengan pemeriksaan token/sesi yang diserialkan; upload foto revalidasi status request dan membersihkan file Drive sementara jika request berubah.
 
+**P3 — Customer experience**
+- Foto aktual tidak lagi diunduh semua saat portal dibuka. Pelanggan menekan **Lihat foto aktual** untuk memuat foto item terkait.
+- CTA WhatsApp memakai nomor `admin_whatsapp` dari public GAS Settings. Jika kosong/tidak valid, portal menampilkan status konfigurasi, bukan tautan mati.
+- Fungsi pembentuk tautan WhatsApp dinormalisasi untuk nomor lokal Indonesia dan diuji terpisah.
+
+**Konfigurasi WhatsApp admin**
+- Buka sheet `Settings` pada spreadsheet GAS.
+- Cari baris `setting_key = admin_whatsapp`.
+- Isi `setting_value` dengan nomor dalam format internasional digit saja, misalnya `6281234567890`; tandai `is_public = TRUE`.
+- Tidak perlu menambahkan nomor ke source code. `getPublicSettings_()` hanya mengekspos key publik yang diizinkan.
+
+**Batas verifikasi**
+- CI memeriksa typecheck, unit test, build Vercel, build single-file GAS, dan validator struktur/guard keamanan.
+- Pengujian integrasi nyata terhadap Script Properties, Google Sheets, Drive, dan Web App staging belum dilakukan dari branch ini. Jangan menganggap perubahan sudah live sebelum owner menjalankan staging smoke test.
 ## Urutan kerja yang disarankan
 
 ### P0 — Stabilkan routing dan kontrak app

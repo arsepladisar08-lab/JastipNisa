@@ -156,11 +156,11 @@ function resetState(): void {
       customerName: 'Alya Demo',
       customerPhone: '081234567890',
       customerAddress: 'Surabaya (data contoh)',
-      status: 'awaiting_customer_approval',
+      status: 'order_created',
       createdAt: stamp,
       token: MOCK_CUSTOMER_TOKEN_1,
       revokedAt: '',
-      orderId: '',
+      orderId: 'demo-order-001',
     },
     {
       requestGroupId: 'demo-group-search',
@@ -186,7 +186,7 @@ function resetState(): void {
       quantity: 1,
       status: 'found',
       actualCondition: 'Kondisi contoh: jahitan rapi, hardware sesuai foto.',
-      customerDecision: '',
+      customerDecision: 'approved',
       photoCount: 1,
       assignedUnitCount: 0,
     },
@@ -246,7 +246,7 @@ function resetState(): void {
     },
   ]
   units = [
-    { unitId: 'demo-unit-001', unitCode: 'DEMO-UNIT-001', productId: 'demo-product-1', variantId: 'demo-variant-black', status: 'available', purchasePrice: 90000, sellingPrice: 108000, heldRequestId: '', reservedOrderId: '' },
+    { unitId: 'demo-unit-001', unitCode: 'DEMO-UNIT-001', productId: 'demo-product-1', variantId: 'demo-variant-black', status: 'reserved', purchasePrice: 90000, sellingPrice: 108000, heldRequestId: '', reservedOrderId: '' },
     { unitId: 'demo-unit-002', unitCode: 'DEMO-UNIT-002', productId: 'demo-product-2', variantId: 'demo-variant-brown', status: 'available', purchasePrice: 95000, sellingPrice: 119000, heldRequestId: '', reservedOrderId: '' },
   ]
   expenses = []

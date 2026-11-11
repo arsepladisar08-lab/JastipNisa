@@ -33,9 +33,10 @@ Dokumentasi lama yang memilih Supabase sudah tidak menjadi keputusan arsitektur 
 ## Progress implementasi setelah audit 11 Nov 2026
 
 - [x] P0 deep-link GAS dan P1 mock lokal digabung ke `SOWAN` melalui PR #10.
-- [x] P2 guard sesi admin, keputusan/token pelanggan, fingerprint idempotency pembayaran/pengeluaran, dan validasi integritas Drive diimplementasikan pada branch kerja P2/P3.
-- [x] P3 lazy-load foto portal dan CTA WhatsApp berbasis konfigurasi GAS diimplementasikan pada branch kerja P2/P3.
-- [ ] Review PR, CI penuh, dan uji integrasi di GAS staging masih diperlukan; belum ada deployment produksi.
+- [x] P2 guard sesi admin, keputusan/token pelanggan, fingerprint idempotency pembayaran/pengeluaran, dan validasi integritas Drive digabung melalui PR #11.
+- [x] P3 lazy-load foto portal dan CTA WhatsApp berbasis konfigurasi GAS digabung melalui PR #11.
+- [x] CI PR #11 lulus: dependency audit, typecheck, 35 unit tests, Vercel build, GAS single-file build, dan GAS validation.
+- [ ] Uji integrasi di GAS staging dan deployment produksi masih diperlukan; belum dilakukan.
 
 ## Status saat dokumen dibuat
 

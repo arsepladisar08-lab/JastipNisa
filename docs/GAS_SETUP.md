@@ -81,6 +81,10 @@ Setelah setupJastipNisa_ berhasil:
 
 Sesi admin berada di CacheService selama 30 menit dan dapat berakhir lebih cepat bila cache dihapus. Jika cache hilang, login kembali. Setelah delapan percobaan gagal dari browser key yang sama, login dari browser tersebut ditahan 15 menit. Ini best-effort friction, bukan perlindungan brute-force tingkat jaringan: Apps Script Web App publik tidak memberikan client IP tepercaya ke aplikasi ini, sehingga deployment publik tetap perlu dipantau dan kredensial admin harus unik serta kuat.
 
+### Rotasi password admin
+
+Setelah login, buka **Keamanan akun** pada Admin Workspace. Masukkan password saat ini, lalu passphrase baru minimal 16 karakter dan konfirmasinya. Server memverifikasi password lama, membuat salt dan HMAC hash baru, lalu menaikkan versi autentikasi. Semua sesi admin yang sudah aktif—termasuk browser lain—akan ditolak dan admin harus login kembali dengan password baru. Password plaintext tidak ditulis ke Sheet, Audit_Log, atau log eksekusi.
+
 ### Penerbitan ulang token portal pelanggan
 
 Workspace admin menyediakan aksi **Terbitkan ulang token** dan **Cabut akses** pada setiap request group. Token baru dibuat di server, hanya hash HMAC yang disimpan pada Sheet Request_Groups, dan token lama tidak berlaku setelah reissue. Admin harus menyalin token baru dan mengirimkannya kepada pelanggan melalui kanal privat. Token plaintext hanya ditampilkan pada sesi admin saat itu; muat ulang halaman akan menghilangkan tampilan token tersebut.

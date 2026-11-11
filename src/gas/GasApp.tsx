@@ -7,6 +7,7 @@ import {
   adminLogin,
   assignAdminUnit,
   confirmCustomerShopee,
+  changeAdminPassword,
   createAdminOrder,
   createRequest,
   getAdminDashboard,
@@ -53,6 +54,7 @@ import {
 const ACCESS_TOKEN_KEY = 'jn.customer.access-token'
 const ADMIN_SESSION_KEY = 'jn.admin.session-token'
 const ADMIN_LOGIN_CLIENT_KEY = 'jn.admin.login-client'
+const ADMIN_PASSWORD_CHANGED_KEY = 'jn.admin.password-changed'
 
 function formatRupiah(value: number) {
   return new Intl.NumberFormat('id-ID', {
@@ -422,6 +424,13 @@ function AdminLoginPage() {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  useEffect(() => {
+    if (sessionStorage.getItem(ADMIN_PASSWORD_CHANGED_KEY)) {
+      sessionStorage.removeItem(ADMIN_PASSWORD_CHANGED_KEY)
+      setNotice('Password berhasil diubah. Silakan masuk kembali menggunakan password baru.')
+    }
+  }, [])
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy(true)
@@ -441,7 +450,7 @@ function AdminLoginPage() {
       setBusy(false)
     }
   }
-  return <AppShell><section className="jn-login-wrap"><div className="jn-login-card"><span className="jn-eyebrow">PRIVATE WORKSPACE</span><h1>Admin JastipNisa</h1><p>Masuk menggunakan password admin yang sudah diatur pada Apps Script.</p><form className="jn-form" onSubmit={submit}><label className="jn-field">Password admin<input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error && <div className="jn-alert jn-alert-error">{error}</div>}<button className="jn-button jn-button-primary" disabled={busy}>{busy ? 'Memeriksa…' : 'Masuk workspace'}</button></form></div></section></AppShell>
+  return <AppShell><section className="jn-login-wrap"><div className="jn-login-card"><span className="jn-eyebrow">PRIVATE WORKSPACE</span><h1>Admin JastipNisa</h1><p>Masuk menggunakan password admin yang sudah diatur pada Apps Script.</p>{notice && <div className="jn-alert jn-alert-success">{notice}</div>}<form className="jn-form" onSubmit={submit}><label className="jn-field">Password admin<input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error && <div className="jn-alert jn-alert-error">{error}</div>}<button className="jn-button jn-button-primary" disabled={busy}>{busy ? 'Memeriksa…' : 'Masuk workspace'}</button></form></div></section></AppShell>
 }
 
 function AdminPage() {
@@ -455,6 +464,11 @@ function AdminPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [securityFormOpen, setSecurityFormOpen] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [passwordBusy, setPasswordBusy] = useState(false)
   const [issuedTokens, setIssuedTokens] = useState<Record<string, string>>({})
   const [tokenActionGroup, setTokenActionGroup] = useState('')
 
@@ -492,6 +506,32 @@ function AdminPage() {
     sessionStorage.removeItem(ADMIN_SESSION_KEY)
     setSessionToken('')
     navigate('/admin/login', { replace: true })
+  }
+
+  async function submitPasswordRotation() {
+    setError('')
+    setNotice('')
+    if (newPassword.length < 16 || newPassword.length > 256) {
+      setError('Password baru harus terdiri dari 16–256 karakter.')
+      return
+    }
+    if (newPassword !== confirmNewPassword) {
+      setError('Konfirmasi password baru belum sama.')
+      return
+    }
+
+    setPasswordBusy(true)
+    try {
+      await changeAdminPassword(sessionToken, currentPassword, newPassword)
+      sessionStorage.removeItem(ADMIN_SESSION_KEY)
+      sessionStorage.setItem(ADMIN_PASSWORD_CHANGED_KEY, '1')
+      setSessionToken('')
+      navigate('/admin/login', { replace: true })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Password admin belum dapat diganti.')
+    } finally {
+      setPasswordBusy(false)
+    }
   }
 
   async function reissueCustomerToken(groupId: string) {
@@ -763,7 +803,14 @@ function AdminPage() {
   }
 
   return <AppShell>
-    <div className="jn-admin-top"><div><span className="jn-eyebrow">OPERATIONS</span><h1>Admin workspace</h1><p>Kelola request, pencarian barang, unit fisik dan pesanan.</p></div><button type="button" className="jn-button jn-button-outline" onClick={() => void signOut()}>Keluar</button></div>
+    <div className="jn-admin-top"><div><span className="jn-eyebrow">OPERATIONS</span><h1>Admin workspace</h1><p>Kelola request, pencarian barang, unit fisik dan pesanan.</p></div><div className="jn-admin-top-actions"><button type="button" className="jn-button jn-button-outline" onClick={() => setSecurityFormOpen((open) => !open)}>{securityFormOpen ? 'Tutup keamanan' : 'Keamanan akun'}</button><button type="button" className="jn-button jn-button-outline" onClick={() => void signOut()}>Keluar</button></div></div>
+    {securityFormOpen && <form className="jn-security-form" onSubmit={(event) => { event.preventDefault(); void submitPasswordRotation() }}>
+      <div><span className="jn-eyebrow">ACCOUNT SECURITY</span><h2>Ganti password admin</h2><p>Gunakan passphrase baru minimal 16 karakter. Setelah diganti, semua sesi admin di browser lain juga akan dinonaktifkan dan Anda perlu login kembali.</p></div>
+      <label className="jn-field">Password saat ini<input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+      <label className="jn-field">Password baru<input type="password" autoComplete="new-password" minLength={16} maxLength={256} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
+      <label className="jn-field">Ulangi password baru<input type="password" autoComplete="new-password" minLength={16} maxLength={256} required value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} /></label>
+      <button type="submit" className="jn-button jn-button-primary" disabled={passwordBusy}>{passwordBusy ? 'Mengganti password…' : 'Ganti password dan keluar'}</button>
+    </form>}
     {error && <div className="jn-alert jn-alert-error">{error}</div>}
     {notice && <div className="jn-alert jn-alert-success">{notice}</div>}
     {dashboard && <div className="jn-stat-grid">

@@ -149,6 +149,18 @@ export type CreatedRequest = {
   reusedSubmission: boolean
 }
 
+export type CancellationRequest = {
+  cancellationRequestId: string
+  requestGroupId?: string
+  reason: string
+  status: string
+  reviewNote: string
+  createdAt: string
+  reviewedAt: string
+}
+
+export type CustomerCancellationRequest = Omit<CancellationRequest, 'requestGroupId'>
+
 export type CustomerPortal = {
   requestCode: string
   status: string
@@ -171,6 +183,8 @@ export type CustomerPortal = {
     shopeeCheckoutUrl: string
     trackingNumber: string
     courier: string
+    canRequestCancellation: boolean
+    cancellationRequests: CustomerCancellationRequest[]
   }
 }
 
@@ -240,6 +254,12 @@ export function createRequest(payload: {
 
 export function getCustomerPortal(token: string) {
   return gasCall<CustomerPortal>('apiCustomerGetPortal', token)
+}
+
+export function requestCustomerOrderCancellation(token: string, reason: string) {
+  return gasCall<{ cancellationRequestId: string; status: string; reused: boolean }>(
+    'apiCustomerRequestOrderCancellation', token, reason,
+  )
 }
 
 export function getCustomerPhoto(token: string, requestId: string, index: number) {
@@ -427,6 +447,7 @@ export type AdminOrder = {
   shipmentStatus: string
   createdAt: string
   payments: AdminRequestPayment[]
+  cancellationRequests: CancellationRequest[]
 }
 
 export function listAdminCatalog(sessionToken: string) {
@@ -469,6 +490,21 @@ export function saveAdminVariant(
 
 export function listAdminOrders(sessionToken: string) {
   return gasCall<AdminOrder[]>('apiAdminListOrders', sessionToken)
+}
+
+export function reviewAdminCancellationRequest(
+  sessionToken: string,
+  cancellationRequestId: string,
+  decision: 'accepted' | 'rejected',
+  reviewNote: string,
+) {
+  return gasCall<{
+    saved: boolean
+    status: string
+    reused: boolean
+    orderChanged: boolean
+    executionDeferred?: boolean
+  }>('apiAdminReviewCancellationRequest', sessionToken, cancellationRequestId, decision, reviewNote)
 }
 
 export function updateAdminShipment(

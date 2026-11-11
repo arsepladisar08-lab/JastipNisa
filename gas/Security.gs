@@ -78,7 +78,7 @@ function requireAdmin_(sessionToken) {
 function adminLogin_(password) {
   var input = String(password || '')
   if (input.length < 1 || input.length > 256) {
-    throw publicError_('LOGIN_FAILED', 'Email atau password admin tidak sesuai.')
+    throw publicError_('LOGIN_FAILED', 'Password admin tidak sesuai.')
   }
 
   var properties = getScriptProperties_()
@@ -125,6 +125,7 @@ function adminLogin_(password) {
 }
 
 function adminLogout_(sessionToken) {
+  requireAdmin_(sessionToken)
   var cacheKey = sessionCacheKey_(sessionToken)
   CacheService.getScriptCache().remove(cacheKey)
   appendAudit_('admin', 'primary', 'logout', 'session', '', {})

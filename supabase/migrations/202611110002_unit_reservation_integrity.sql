@@ -105,6 +105,7 @@ declare
   v_unit_status text;
   v_reserved_order_id uuid;
   v_variant_name text;
+  v_target_order_status text;
 begin
   if tg_op = 'UPDATE' then
     if old.unit_id is not null and (
@@ -115,6 +116,27 @@ begin
         using errcode = '22023';
     end if;
     if old.unit_id is not null and new.unit_id = old.unit_id then
+      select product_id, variant_id
+        into v_unit_product_id, v_unit_variant_id
+      from public.units
+      where id = new.unit_id
+      for update;
+
+      if not found or v_unit_product_id is distinct from new.product_id then
+        raise exception 'Assigned physical unit must remain linked to its original catalog product.'
+          using errcode = '22023';
+      end if;
+
+      if v_unit_variant_id is not null and nullif(trim(new.variant_snapshot), '') is not null then
+        select name into v_variant_name
+        from public.catalog_variants
+        where id = v_unit_variant_id;
+
+        if lower(trim(coalesce(v_variant_name, ''))) <> lower(trim(new.variant_snapshot)) then
+          raise exception 'Assigned physical unit variant does not match the order item variant.'
+            using errcode = '22023';
+        end if;
+      end if;
       return new;
     end if;
   end if;
@@ -125,6 +147,20 @@ begin
 
   if new.quantity <> 1 then
     raise exception 'A physical unit can only be linked to an order item with quantity one.'
+      using errcode = '22023';
+  end if;
+
+  select status into v_target_order_status
+  from public.orders
+  where id = new.order_id
+  for update;
+
+  if not found then
+    raise exception 'Target order does not exist.'
+      using errcode = 'P0002';
+  end if;
+  if v_target_order_status in ('cancelled', 'shipped', 'completed') then
+    raise exception 'A unit cannot be assigned to a cancelled or already fulfilled order.'
       using errcode = '22023';
   end if;
 
@@ -366,6 +402,7 @@ declare
   v_shopee_username text;
   v_shopee_confirmed_at timestamptz;
   v_existing_shipment_status text;
+  v_existing_shipped_at timestamptz;
 begin
   if not public.is_admin() then
     raise exception 'Admin access required' using errcode = '42501';
@@ -401,7 +438,8 @@ begin
       using errcode = '22023';
   end if;
 
-  select status into v_existing_shipment_status
+  select status, shipped_at
+    into v_existing_shipment_status, v_existing_shipped_at
   from public.shipments
   where order_id = p_order_id
   for update;
@@ -410,8 +448,13 @@ begin
     raise exception 'Delivered shipment status cannot be moved backwards' using errcode = '22023';
   end if;
 
-  if v_existing_shipment_status = 'shipped' and p_status = 'preparing' then
-    raise exception 'A shipped order cannot return to packing' using errcode = '22023';
+  if p_status = 'preparing'
+     and (
+       v_existing_shipped_at is not null
+       or v_order_status in ('shipped', 'completed')
+       or v_existing_shipment_status in ('shipped', 'delivered')
+     ) then
+    raise exception 'A shipment that has already left cannot return to packing' using errcode = '22023';
   end if;
 
   insert into public.shipments (

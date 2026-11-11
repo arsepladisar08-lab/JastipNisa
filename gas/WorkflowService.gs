@@ -570,3 +570,28 @@ function addExpenseAsAdmin_(sessionToken, payload) {
     return { expenseId: expenseId, reused: false }
   })
 }
+
+function updateOrderOptionsAsAdmin_(sessionToken, payload) {
+  var session = requireAdmin_(sessionToken)
+  var orderId = cleanText_(payload && payload.orderId, 100, 'Order')
+  var checkoutUrl = cleanText_(payload && payload.shopeeCheckoutUrl || '', 800, 'Link Shopee')
+  if (checkoutUrl && !/^https:\/\/.+/i.test(checkoutUrl)) {
+    throw publicError_('INVALID_SHOPEE_URL', 'Link checkout Shopee harus menggunakan HTTPS.')
+  }
+  return withScriptLock_(function () {
+    var order = findRecord_('Orders', 'order_id', orderId)
+    if (!order) throw publicError_('ORDER_NOT_FOUND', 'Pesanan tidak ditemukan.')
+    if (['cancelled', 'completed'].indexOf(String(order.status)) !== -1) {
+      throw publicError_('INVALID_STATE', 'Pesanan selesai atau dibatalkan tidak dapat diubah.')
+    }
+    updateRecord_('Orders', 'order_id', orderId, {
+      shopee_checkout_url: checkoutUrl,
+      updated_at: isoNow_()
+    })
+    appendAudit_('admin', session.role, 'order_shopee_link_updated', 'order', orderId, {
+      checkoutLinkSet: Boolean(checkoutUrl)
+    })
+    return { saved: true }
+  })
+}
+

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import {
   addAdminUnit,
+  addAdminExpense,
   addAdminPayment,
   adminLogin,
   assignAdminUnit,
@@ -9,12 +10,14 @@ import {
   createAdminOrder,
   createRequest,
   getAdminDashboard,
+  getAdminFinancialSummary,
   getAdminPaymentProof,
   getCustomerPhoto,
   getCustomerPortal,
   getPublicCatalog,
   getPublicConfig,
   listAdminCatalog,
+  listAdminExpenses,
   listAdminOrders,
   listAdminRequests,
   logoutAdmin,
@@ -31,6 +34,8 @@ import {
   type AdminCatalogProduct,
   type AdminCatalogVariant,
   type AdminDashboard,
+  type AdminExpense,
+  type AdminFinancialSummary,
   type AdminOrder,
   type AdminRequestGroup,
   type CatalogProduct,
@@ -438,6 +443,8 @@ function AdminPage() {
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null)
   const [groups, setGroups] = useState<AdminRequestGroup[]>([])
   const [orders, setOrders] = useState<AdminOrder[]>([])
+  const [expenses, setExpenses] = useState<AdminExpense[]>([])
+  const [financialSummary, setFinancialSummary] = useState<AdminFinancialSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -446,14 +453,18 @@ function AdminPage() {
     setLoading(true)
     setError('')
     try {
-      const [stats, requests, orderList] = await Promise.all([
+      const [stats, requests, orderList, expenseList, finance] = await Promise.all([
         getAdminDashboard(token),
         listAdminRequests(token, 'all'),
         listAdminOrders(token),
+        listAdminExpenses(token),
+        getAdminFinancialSummary(token),
       ])
       setDashboard(stats)
       setGroups(requests)
       setOrders(orderList)
+      setExpenses(expenseList)
+      setFinancialSummary(finance)
     } catch (reason) {
       sessionStorage.removeItem(ADMIN_SESSION_KEY)
       setSessionToken('')
@@ -674,6 +685,32 @@ function AdminPage() {
     }
   }
 
+  async function saveExpense(form: HTMLFormElement) {
+    const values = new FormData(form)
+    const amount = Number(values.get('amount') || 0)
+    const occurredAt = String(values.get('occurredAt') || '')
+    const category = String(values.get('category') || '')
+    const description = String(values.get('description') || '')
+    if (!Number.isFinite(amount) || amount <= 0 || !category || !/^\d{4}-\d{2}-\d{2}$/.test(occurredAt)) {
+      setError('Periksa kategori, nominal, dan tanggal pengeluaran.')
+      return
+    }
+    try {
+      await addAdminExpense(sessionToken, {
+        amount,
+        occurredAt,
+        category,
+        description,
+        idempotencyKey: window.crypto.randomUUID(),
+      })
+      setNotice('Pengeluaran berhasil dicatat.')
+      form.reset()
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Pengeluaran gagal dicatat.')
+    }
+  }
+
   return <AppShell>
     <div className="jn-admin-top"><div><span className="jn-eyebrow">OPERATIONS</span><h1>Admin workspace</h1><p>Kelola request, pencarian barang, unit fisik dan pesanan.</p></div><button type="button" className="jn-button jn-button-outline" onClick={() => void signOut()}>Keluar</button></div>
     {error && <div className="jn-alert jn-alert-error">{error}</div>}
@@ -708,6 +745,11 @@ function AdminPage() {
       onViewProof={viewPaymentProof}
       onUpdateShipment={updateShipment}
       onSaveShopeeLink={saveShopeeLink}
+    />
+    <FinanceManager
+      summary={financialSummary}
+      expenses={expenses}
+      onAddExpense={saveExpense}
     />
   </AppShell>
 }
@@ -957,6 +999,47 @@ function OrdersManager({
         </form>
       </article>)}
     </div>}
+  </section>
+}
+
+function FinanceManager({
+  summary,
+  expenses,
+  onAddExpense,
+}: {
+  summary: AdminFinancialSummary | null
+  expenses: AdminExpense[]
+  onAddExpense: (form: HTMLFormElement) => Promise<void>
+}) {
+  const [occurredAt, setOccurredAt] = useState(new Date().toISOString().slice(0, 10))
+  return <section className="jn-section jn-finance-manager">
+    <div className="jn-section-heading"><div><span className="jn-eyebrow">FINANCE & OPERATING COSTS</span><h2>Ringkasan keuangan</h2><p>Angka di bawah berasal dari catatan order, pembayaran terverifikasi, unit, dan pengeluaran.</p></div></div>
+    {summary && <div className="jn-finance-grid">
+      <div><small>Fee tercatat pada order</small><strong>{formatRupiah(summary.feeBilled)}</strong></div>
+      <div><small>Transfer / tunai terverifikasi</small><strong>{formatRupiah(summary.verifiedBankAndCash)}</strong></div>
+      <div><small>Pembayaran Shopee terverifikasi</small><strong>{formatRupiah(summary.verifiedShopeePayments)}</strong></div>
+      <div><small>Refund terverifikasi</small><strong>{formatRupiah(summary.verifiedRefunds)}</strong></div>
+      <div><small>Sisa tagihan order aktif</small><strong>{formatRupiah(summary.outstandingBalances)}</strong></div>
+      <div><small>HPP unit yang dialokasikan</small><strong>{formatRupiah(summary.allocatedUnitPurchaseCost)}</strong></div>
+      <div><small>Pengeluaran tercatat</small><strong>{formatRupiah(summary.recordedExpenses)}</strong></div>
+      <div><small>Jumlah order</small><strong>{summary.ordersCount}</strong></div>
+    </div>}
+    <p className="jn-finance-disclaimer">Ini ringkasan operasional, bukan laporan laba bersih atau laporan akuntansi. Pembayaran Shopee dan transfer/tunai ditampilkan terpisah; biaya platform, ongkir, dan perlakuan akuntansi perlu disesuaikan dengan bukti aktual serta kebijakan yang disepakati.</p>
+    <form className="jn-panel jn-expense-form" onSubmit={(event) => { event.preventDefault(); void onAddExpense(event.currentTarget) }}>
+      <div><span className="jn-eyebrow">NEW EXPENSE</span><h3>Catat pengeluaran</h3></div>
+      <label className="jn-field">Kategori<select name="category"><option value="transport">Transportasi</option><option value="parking">Parkir</option><option value="food">Makan</option><option value="packing">Packing</option><option value="shipping">Ongkir dibayar admin</option><option value="platform">Biaya platform</option><option value="other">Lainnya</option></select></label>
+      <label className="jn-field">Nominal (Rp)<input type="number" name="amount" min="1" step="1" required placeholder="Nominal aktual" /></label>
+      <label className="jn-field">Tanggal<input type="date" name="occurredAt" required value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} /></label>
+      <label className="jn-field">Keterangan<input type="text" name="description" maxLength={500} placeholder="Detail pengeluaran" /></label>
+      <button className="jn-button jn-button-primary">Simpan pengeluaran</button>
+    </form>
+    <div className="jn-expense-history">
+      <div className="jn-section-heading"><div><span className="jn-eyebrow">EXPENSE LEDGER</span><h3>Riwayat pengeluaran</h3></div></div>
+      {expenses.length === 0 ? <div className="jn-empty"><strong>Belum ada pengeluaran.</strong><span>Biaya operasional yang dicatat akan muncul di sini.</span></div> : expenses.map((expense) => <div className="jn-expense-row" key={expense.expenseId}>
+        <div><strong>{expense.category}</strong><small>{new Date(expense.occurredAt + 'T00:00:00').toLocaleDateString('id-ID')} · {expense.description || 'Tanpa keterangan'}</small></div>
+        <strong>{formatRupiah(expense.amount)}</strong>
+      </div>)}
+    </div>
   </section>
 }
 

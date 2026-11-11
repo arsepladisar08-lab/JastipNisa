@@ -123,7 +123,8 @@ function apiCustomerGetPhoto(accessToken, requestId, photoIndex) {
   return safeApi_(function () {
     var group = findRequestGroupByToken_(accessToken)
     var request = findRecord_('Requests', 'request_id', requestId)
-    if (!request || String(request.request_group_id) !== String(group.request_group_id)) {
+    if (!request || String(request.request_group_id) !== String(group.request_group_id) ||
+        String(request.status) !== 'found') {
       throw publicError_('NOT_FOUND', 'Foto tidak ditemukan atau tidak tersedia.')
     }
     var ids = safeJsonParse_(request.actual_photo_file_ids_json, [])

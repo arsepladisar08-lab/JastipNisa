@@ -9,6 +9,9 @@ function uploadRequestPhotoAsAdmin_(sessionToken, payload) {
   }
   var request = findRecord_('Requests', 'request_id', requestId)
   if (!request) throw publicError_('NOT_FOUND', 'Request item tidak ditemukan.')
+  if (String(request.status) !== 'found') {
+    throw publicError_('INVALID_STATE', 'Foto aktual hanya dapat diunggah setelah item ditandai ditemukan.')
+  }
   var bytes
   try {
     bytes = Utilities.base64Decode(base64)

@@ -485,18 +485,41 @@ function apiAdminListRequests(sessionToken, statusFilter) {
     var requests = readRecords_('Requests')
     var buyers = readRecords_('Buyers')
     var payments = readRecords_('Payments')
+    var requestsByGroup = Object.create(null)
+    var paymentsByGroup = Object.create(null)
+    var buyersById = Object.create(null)
     var wanted = String(statusFilter || 'all')
+
+    requests.forEach(function (row) {
+      var key = String(row.request_group_id)
+      if (!requestsByGroup[key]) requestsByGroup[key] = []
+      requestsByGroup[key].push(row)
+    })
+    payments.forEach(function (row) {
+      var key = String(row.request_group_id || '')
+      if (!key) return
+      if (!paymentsByGroup[key]) paymentsByGroup[key] = []
+      paymentsByGroup[key].push(row)
+    })
+    buyers.forEach(function (row) {
+      buyersById[String(row.buyer_id)] = row
+    })
+
     return groups.filter(function (group) {
-      var items = requests.filter(function (row) {
-        return String(row.request_group_id) === String(group.request_group_id)
-      })
+      var items = requestsByGroup[String(group.request_group_id)] || []
       return wanted === 'all' || String(group.status) === wanted || items.some(function (row) {
         return String(row.status) === wanted
       })
     }).map(function (group) {
-      var buyer = buyers.filter(function (row) { return String(row.buyer_id) === String(group.buyer_id) })[0] || {}
+      var groupId = String(group.request_group_id)
+      var buyer = buyersById[String(group.buyer_id)] || {}
+      var groupPayments = paymentsByGroup[groupId] || []
+      var verifiedDepositAmount = groupPayments.reduce(function (sum, payment) {
+        return sum + (String(payment.type) === 'deposit' && String(payment.verification_status) === 'verified'
+          ? Number(payment.amount || 0) : 0)
+      }, 0)
       return {
-        requestGroupId: String(group.request_group_id),
+        requestGroupId: groupId,
         orderId: String(group.order_id || ''),
         hasActiveAccessToken: Boolean(group.access_token_hash) && !group.access_token_revoked_at,
         requestCode: String(group.request_code),
@@ -505,9 +528,7 @@ function apiAdminListRequests(sessionToken, statusFilter) {
         customerName: String(buyer.name || ''),
         customerPhone: String(buyer.phone || ''),
         customerAddress: String(buyer.address || ''),
-        payments: payments.filter(function (payment) {
-          return String(payment.request_group_id) === String(group.request_group_id)
-        }).map(function (payment) {
+        payments: groupPayments.map(function (payment) {
           return {
             paymentId: String(payment.payment_id),
             type: String(payment.type),
@@ -519,14 +540,8 @@ function apiAdminListRequests(sessionToken, statusFilter) {
             hasProof: Boolean(payment.proof_file_id)
           }
         }),
-        verifiedDepositAmount: payments.filter(function (payment) {
-          return String(payment.request_group_id) === String(group.request_group_id) &&
-            String(payment.type) === 'deposit' &&
-            String(payment.verification_status) === 'verified'
-        }).reduce(function (sum, payment) { return sum + Number(payment.amount || 0) }, 0),
-        items: requests.filter(function (row) {
-          return String(row.request_group_id) === String(group.request_group_id)
-        }).map(function (row) {
+        verifiedDepositAmount: verifiedDepositAmount,
+        items: (requestsByGroup[groupId] || []).map(function (row) {
           return {
             requestId: String(row.request_id),
             productId: String(row.product_id),
@@ -541,6 +556,8 @@ function apiAdminListRequests(sessionToken, statusFilter) {
           }
         })
       }
+    }).sort(function (left, right) {
+      return String(right.createdAt).localeCompare(String(left.createdAt))
     })
   })
 }

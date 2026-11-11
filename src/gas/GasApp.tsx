@@ -800,7 +800,7 @@ function AdminPage() {
           <div className="jn-admin-group-head"><div><span className="jn-eyebrow">{group.requestCode}</span><h3>{group.customerName}</h3><small>{group.customerPhone} · {group.customerAddress || 'Alamat belum diisi'} · {new Date(group.createdAt).toLocaleString('id-ID')}</small></div><span className="jn-status">{displayStatus(group.status)}</span></div>
           <div className="jn-token-management">
             <div className="jn-token-management-copy">
-              <strong>Akses portal pelanggan: {group.hasActiveAccessToken ? 'Aktif' : 'Dicabut'}</strong>
+              <strong>Akses portal pelanggan: {group.hasActiveAccessToken ? 'Aktif' : 'Tidak aktif'}</strong>
               <p>Terbitkan ulang token ketika pelanggan kehilangan akses. Token lama otomatis tidak berlaku setelah token baru diterbitkan.</p>
               {issuedTokens[group.requestGroupId] && <div className="jn-issued-token">
                 <small>Token baru untuk {group.requestCode} — kirim secara privat</small>

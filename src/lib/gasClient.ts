@@ -127,9 +127,6 @@ export type CustomerPortal = {
   createdAt: string
   items: Array<{
     requestId: string
-    productId: string
-    variantId: string
-    assignedUnitCount: number
     productName: string
     variantName: string
     quantity: number
@@ -179,9 +176,12 @@ export type AdminRequestGroup = {
   payments: AdminRequestPayment[]
   items: Array<{
     requestId: string
+    productId: string
+    variantId: string
     productName: string
     variantName: string
     quantity: number
+    assignedUnitCount: number
     status: string
     actualCondition: string
     customerDecision: string

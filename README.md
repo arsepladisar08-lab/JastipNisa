@@ -8,7 +8,7 @@ Aplikasi operasional jasa titip produk Flicka dengan frontend React dan backend 
 
 **Penting:** branch SOWAN saat ini masih berisi implementasi React + Supabase. Branch arsitektur baru terlebih dahulu menetapkan peta migrasi; source code runtime belum seluruhnya dipindahkan ke GAS. Jangan deploy branch dokumentasi ini sebagai aplikasi GAS produksi.
 
-Dokumen utama pengembangan: [Peta Implementasi Terpadu — React + Google Apps Script](docs/IMPLEMENTATION_MAP_REACT_GAS.md).
+Dokumen utama pengembangan: [Peta Implementasi Terpadu — React + Google Apps Script](docs/IMPLEMENTATION_MAP_REACT_GAS.md). Panduan setup: [GAS_SETUP.md](docs/GAS_SETUP.md).
 
 ## Target architecture
 
@@ -50,6 +50,6 @@ Source code di branch SOWAN masih memakai Supabase. Untuk saat ini perintah npm 
 3. npm test
 4. npm run build
 
-Konfigurasi Spreadsheet, Drive, Apps Script deployment, clasp, dan build single-file GAS akan ditambahkan pada fase migrasi. Jangan menggunakan panduan Supabase lama untuk arsitektur target; lihat catatan deprekasi di docs/SUPABASE_SETUP.md.
+Untuk membangun target GAS: jalankan npm run build:gas lalu npm run gas:validate. Instal clasp CLI secara global (npm install -g @google/clasp@3.4.1), login, konfigurasi .clasp.json, lalu ikuti docs/GAS_SETUP.md. Source legacy Supabase masih dipertahankan sementara hingga seluruh halaman dan data beralih.
 
-Tidak ada database Supabase production, Spreadsheet production, atau deployment GAS yang dikonfigurasi melalui perubahan dokumentasi ini. Periksa dan backup data aktual sebelum cutover.
+Tidak ada Spreadsheet production, Drive folder, atau deployment GAS yang dibuat melalui commit GitHub ini. Periksa dan backup data aktual sebelum cutover.

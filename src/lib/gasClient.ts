@@ -25,6 +25,17 @@ declare global {
   }
 }
 
+const MAX_CONCURRENT_GAS_CALLS = 8
+let activeGasCalls = 0
+const gasCallQueue: Array<() => void> = []
+
+function drainGasQueue() {
+  while (activeGasCalls < MAX_CONCURRENT_GAS_CALLS && gasCallQueue.length > 0) {
+    const next = gasCallQueue.shift()
+    next?.()
+  }
+}
+
 export class GasApiError extends Error {
   code: string
 
@@ -45,45 +56,53 @@ export function gasCall<T>(method: string, ...args: unknown[]): Promise<T> {
   }
 
   return new Promise<T>((resolve, reject) => {
-    let settled = false
-    const runner = root
-      .withSuccessHandler((rawResult) => {
+    const execute = () => {
+      activeGasCalls += 1
+      let settled = false
+      const finish = (callback: () => void) => {
         if (settled) return
         settled = true
-        const result = rawResult as ApiEnvelope<T> | null
-        if (!result || typeof result.ok !== 'boolean') {
-          reject(new GasApiError('INVALID_RESPONSE', 'Respons server tidak dapat dibaca.'))
-          return
-        }
-        if (!result.ok) {
-          reject(new GasApiError(
-            result.error?.code || 'REQUEST_FAILED',
-            result.error?.message || 'Permintaan belum dapat diproses.',
-          ))
-          return
-        }
-        resolve(result.data as T)
-      })
-      .withFailureHandler((error) => {
-        if (settled) return
-        settled = true
-        const message = error instanceof Error ? error.message : 'Koneksi ke Apps Script gagal.'
-        reject(new GasApiError('GAS_EXECUTION_FAILED', message))
-      })
+        activeGasCalls = Math.max(0, activeGasCalls - 1)
+        callback()
+        drainGasQueue()
+      }
+      const runner = root
+        .withSuccessHandler((rawResult) => {
+          const result = rawResult as ApiEnvelope<T> | null
+          finish(() => {
+            if (!result || typeof result.ok !== 'boolean') {
+              reject(new GasApiError('INVALID_RESPONSE', 'Respons server tidak dapat dibaca.'))
+              return
+            }
+            if (!result.ok) {
+              reject(new GasApiError(
+                result.error?.code || 'REQUEST_FAILED',
+                result.error?.message || 'Permintaan belum dapat diproses.',
+              ))
+              return
+            }
+            resolve(result.data as T)
+          })
+        })
+        .withFailureHandler((error) => {
+          const message = error instanceof Error ? error.message : 'Koneksi ke Apps Script gagal.'
+          finish(() => reject(new GasApiError('GAS_EXECUTION_FAILED', message)))
+        })
 
-    const serverMethod = runner[method]
-    if (typeof serverMethod !== 'function') {
-      settled = true
-      reject(new GasApiError('API_NOT_FOUND', 'Fungsi backend tidak tersedia: ' + method))
-      return
-    }
+      const serverMethod = runner[method]
+      if (typeof serverMethod !== 'function') {
+        finish(() => reject(new GasApiError('API_NOT_FOUND', 'Fungsi backend tidak tersedia: ' + method)))
+        return
+      }
 
-    try {
-      ;(serverMethod as (...parameters: unknown[]) => void).apply(runner, args)
-    } catch (error) {
-      settled = true
-      reject(error instanceof Error ? error : new Error('Gagal memanggil Apps Script.'))
+      try {
+        ;(serverMethod as (...parameters: unknown[]) => void).apply(runner, args)
+      } catch (error) {
+        finish(() => reject(error instanceof Error ? error : new Error('Gagal memanggil Apps Script.')))
+      }
     }
+    gasCallQueue.push(execute)
+    drainGasQueue()
   })
 }
 

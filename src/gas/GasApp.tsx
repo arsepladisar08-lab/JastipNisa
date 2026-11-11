@@ -287,8 +287,6 @@ function PortalPage() {
   const [busyItem, setBusyItem] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [issuedTokens, setIssuedTokens] = useState<Record<string, string>>({})
-  const [tokenActionGroup, setTokenActionGroup] = useState('')
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [address, setAddress] = useState('')
@@ -466,6 +464,8 @@ function AdminPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [issuedTokens, setIssuedTokens] = useState<Record<string, string>>({})
+  const [tokenActionGroup, setTokenActionGroup] = useState('')
 
   const refresh = useCallback(async (token: string) => {
     setLoading(true)

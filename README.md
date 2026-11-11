@@ -6,7 +6,7 @@ Aplikasi operasional jasa titip produk Flicka dengan frontend React dan backend 
 
 **Target stack:** React + Vite + TypeScript + Google Apps Script + Google Sheets + Google Drive.
 
-**Penting:** branch SOWAN saat ini masih berisi implementasi React + Supabase. Branch arsitektur baru terlebih dahulu menetapkan peta migrasi; source code runtime belum seluruhnya dipindahkan ke GAS. Jangan deploy branch dokumentasi ini sebagai aplikasi GAS produksi.
+**Penting:** branch SOWAN tetap menjadi baseline React + Supabase sampai PR migrasi direview dan digabung. Branch `architecture/react-google-apps-script` kini berisi entry React GAS terpisah, layanan Apps Script, sheet schema, UI pelanggan/admin, serta build khusus. Belum ada Google Apps Script project/Spreadsheet/Drive deployment yang dikonfigurasi; ikuti GAS_SETUP.md untuk membuat staging di akun pemilik.
 
 Dokumen utama pengembangan: [Peta Implementasi Terpadu — React + Google Apps Script](docs/IMPLEMENTATION_MAP_REACT_GAS.md). Panduan setup: [GAS_SETUP.md](docs/GAS_SETUP.md).
 
@@ -43,13 +43,13 @@ React akan di-build menjadi satu file HTML yang disajikan melalui Apps Script HT
 
 ## Kondisi development saat ini
 
-Source code di branch SOWAN masih memakai Supabase. Untuk saat ini perintah npm yang ada masih memeriksa baseline tersebut:
+Entry default pada branch SOWAN masih memakai Supabase. Pada branch migrasi, entry GAS khusus dapat diuji/dibuild melalui perintah tambahan di bawah. Perintah npm standar masih memeriksa kompatibilitas baseline:
 
 1. npm install
 2. npm run typecheck
 3. npm test
 4. npm run build
 
-Untuk membangun target GAS: jalankan npm run build:gas lalu npm run gas:validate. Instal clasp CLI secara global (npm install -g @google/clasp@3.4.1), login, konfigurasi .clasp.json, lalu ikuti docs/GAS_SETUP.md. Source legacy Supabase masih dipertahankan sementara hingga seluruh halaman dan data beralih.
+Untuk membangun target GAS: jalankan npm run build:gas lalu npm run gas:validate. Build ini membundel `src/gas/main.tsx` ke satu file `gas/Index.html` dan tidak memakai entry Supabase lama. Instal clasp CLI secara global (npm install -g @google/clasp@3.4.1), login, konfigurasi .clasp.json, lalu ikuti docs/GAS_SETUP.md. Source legacy Supabase masih dipertahankan sementara hingga seluruh halaman dan data beralih.
 
 Tidak ada Spreadsheet production, Drive folder, atau deployment GAS yang dibuat melalui commit GitHub ini. Periksa dan backup data aktual sebelum cutover.

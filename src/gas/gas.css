@@ -232,5 +232,5 @@ a{color:inherit;text-decoration:none}
 @media(max-width:700px){.jn-admin-top-actions{width:100%}.jn-security-form{grid-template-columns:1fr}.jn-security-form>div,.jn-security-form .jn-button{grid-column:auto}}
 
 
-.jn-demo-banner{position:sticky;top:0;z-index:50;padding:10px 16px;text-align:center;background:#fff0cf;color:#70480d;border-bottom:1px solid #e7c983;font-size:12px;font-weight:800;letter-spacing:.02em}
+.jn-demo-banner{position:relative;z-index:50;padding:10px 16px;text-align:center;background:#fff0cf;color:#70480d;border-bottom:1px solid #e7c983;font-size:12px;font-weight:800;letter-spacing:.02em}
 .jn-issued-token a{display:inline-block;margin-top:6px;color:#8d5144;text-decoration:underline;text-underline-offset:3px;font-weight:700}

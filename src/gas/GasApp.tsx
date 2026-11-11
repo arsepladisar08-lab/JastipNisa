@@ -118,6 +118,7 @@ function HomePage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [created, setCreated] = useState<{ code: string; token: string } | null>(null)
+  const [submissionAttempt, setSubmissionAttempt] = useState<{ submissionId: string; accessToken: string } | null>(null)
 
   useEffect(() => {
     let active = true
@@ -139,6 +140,8 @@ function HomePage() {
   const fee = useMemo(() => calculateFee(totalQuantity), [totalQuantity])
 
   function updateCart(productId: string, variantId: string, quantity: number) {
+    setSubmissionAttempt(null)
+    setCreated(null)
     setCart((current) => {
       // One selected variant per product per request group keeps the selector and cart in sync.
       const next = current.filter((line) => line.productId !== productId)
@@ -155,14 +158,17 @@ function HomePage() {
       return
     }
     setSubmitting(true)
-    const accessToken = createSecureToken()
-    const submissionId = window.crypto.randomUUID()
+    const attempt = submissionAttempt || {
+      accessToken: createSecureToken(),
+      submissionId: window.crypto.randomUUID(),
+    }
+    if (!submissionAttempt) setSubmissionAttempt(attempt)
     try {
       const result = await createRequest({
         customerName: name.trim(),
         phone: phone.trim(),
-        submissionId,
-        accessToken,
+        submissionId: attempt.submissionId,
+        accessToken: attempt.accessToken,
         items: cart.map((line) => ({
           productId: line.productId,
           variantId: line.variantId || undefined,
@@ -171,6 +177,7 @@ function HomePage() {
       })
       sessionStorage.setItem(ACCESS_TOKEN_KEY, result.accessToken)
       setCreated({ code: result.requestCode, token: result.accessToken })
+      setSubmissionAttempt(null)
       setCart([])
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Request belum dapat dikirim.')
@@ -250,11 +257,12 @@ function HomePage() {
         )}
         <form className="jn-form jn-request-form" onSubmit={handleSubmit}>
           <div className="jn-form-grid">
-            <label className="jn-field">Nama pemesan<input required minLength={2} maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="Nama lengkap" /></label>
-            <label className="jn-field">Nomor WhatsApp<input required minLength={8} maxLength={30} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="08xxxxxxxxxx" /></label>
+            <label className="jn-field">Nama pemesan<input required minLength={2} maxLength={100} value={name} onChange={(event) => { setName(event.target.value); setSubmissionAttempt(null); setCreated(null) }} placeholder="Nama lengkap" /></label>
+            <label className="jn-field">Nomor WhatsApp<input required minLength={8} maxLength={30} value={phone} onChange={(event) => { setPhone(event.target.value); setSubmissionAttempt(null); setCreated(null) }} placeholder="08xxxxxxxxxx" /></label>
           </div>
           {error && <div className="jn-alert jn-alert-error">{error}</div>}
-          <button className="jn-button jn-button-primary" type="submit" disabled={submitting || cart.length === 0}>{submitting ? 'Mengirim request…' : 'Kirim request wishlist'}</button>
+          {submissionAttempt && <p className="jn-muted">Pengiriman sebelumnya belum mendapat konfirmasi. Klik kirim lagi tanpa mengubah isi formulir untuk melanjutkan pengajuan yang sama, bukan membuat request baru.</p>}
+          <button className="jn-button jn-button-primary" type="submit" disabled={submitting || cart.length === 0}>{submitting ? 'Mengirim request…' : submissionAttempt ? 'Coba kirim request lagi' : 'Kirim request wishlist'}</button>
         </form>
         {created && <div className="jn-created">
           <span className="jn-eyebrow">REQUEST TERCATAT</span><h3>{created.code}</h3>

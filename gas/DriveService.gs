@@ -32,6 +32,7 @@ function uploadRequestPhotoAsAdmin_(sessionToken, payload) {
     photoIds.push(file.getId())
     updateRecord_('Requests', 'request_id', requestId, {
       actual_photo_file_ids_json: JSON.stringify(photoIds),
+      customer_decision: '',
       updated_at: isoNow_()
     })
     appendAudit_('admin', session.role, 'request_photo_uploaded', 'request', requestId, { fileId: file.getId() })

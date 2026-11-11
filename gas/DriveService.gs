@@ -103,7 +103,7 @@ function getPaymentProofAsAdmin_(sessionToken, paymentId) {
       throw publicError_('FILE_TOO_LARGE', 'Bukti pembayaran terlalu besar untuk ditampilkan di dashboard.')
     }
     var mimeType = blob.getContentType()
-    if (!/^image\\/(jpeg|png|webp)$/.test(mimeType) && mimeType !== 'application/pdf') {
+    if (!/^image\/(jpeg|png|webp)$/.test(mimeType) && mimeType !== 'application/pdf') {
       throw publicError_('INVALID_FILE', 'Tipe bukti pembayaran tidak didukung.')
     }
     appendAudit_('admin', session.role, 'payment_proof_viewed', 'payment', paymentId, {})

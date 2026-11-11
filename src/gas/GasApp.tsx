@@ -22,6 +22,8 @@ import {
   listAdminRequests,
   logoutAdmin,
   respondToRequestItem,
+  reissueCustomerAccessToken,
+  revokeCustomerAccessToken,
   saveAdminCatalogProduct,
   saveAdminVariant,
   submitOrderDetails,
@@ -285,6 +287,8 @@ function PortalPage() {
   const [busyItem, setBusyItem] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [issuedTokens, setIssuedTokens] = useState<Record<string, string>>({})
+  const [tokenActionGroup, setTokenActionGroup] = useState('')
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [address, setAddress] = useState('')
@@ -497,6 +501,56 @@ function AdminPage() {
     sessionStorage.removeItem(ADMIN_SESSION_KEY)
     setSessionToken('')
     navigate('/admin/login', { replace: true })
+  }
+
+  async function reissueCustomerToken(groupId: string) {
+    setError('')
+    setTokenActionGroup(groupId)
+    try {
+      const result = await reissueCustomerAccessToken(sessionToken, groupId)
+      setIssuedTokens((current) => ({ ...current, [groupId]: result.accessToken }))
+      setNotice('Token baru untuk ' + result.requestCode + ' berhasil diterbitkan. Token lama langsung tidak berlaku; salin dan kirim token baru melalui kanal privat.')
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Token akses baru belum dapat diterbitkan.')
+    } finally {
+      setTokenActionGroup('')
+    }
+  }
+
+  async function revokeCustomerToken(groupId: string) {
+    if (!window.confirm('Cabut akses portal pelanggan untuk request ini? Token yang sedang digunakan akan langsung tidak berlaku.')) return
+    setError('')
+    setTokenActionGroup(groupId)
+    try {
+      await revokeCustomerAccessToken(sessionToken, groupId)
+      setIssuedTokens((current) => {
+        const next = { ...current }
+        delete next[groupId]
+        return next
+      })
+      setNotice('Akses portal pelanggan berhasil dicabut.')
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Akses portal belum dapat dicabut.')
+    } finally {
+      setTokenActionGroup('')
+    }
+  }
+
+  async function copyCustomerToken(groupId: string) {
+    const token = issuedTokens[groupId]
+    if (!token) return
+    if (!navigator.clipboard?.writeText) {
+      setNotice('Clipboard tidak tersedia. Salin token yang ditampilkan secara manual.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(token)
+      setNotice('Token akses berhasil disalin. Kirim kepada pelanggan melalui kanal privat.')
+    } catch {
+      setNotice('Token belum dapat disalin otomatis. Salin token yang ditampilkan secara manual.')
+    }
   }
 
   if (!sessionToken) return <Navigate to="/admin/login" replace />
@@ -744,6 +798,23 @@ function AdminPage() {
       <div className="jn-admin-list">
         {groups.map((group) => <article className="jn-admin-group" key={group.requestGroupId}>
           <div className="jn-admin-group-head"><div><span className="jn-eyebrow">{group.requestCode}</span><h3>{group.customerName}</h3><small>{group.customerPhone} · {group.customerAddress || 'Alamat belum diisi'} · {new Date(group.createdAt).toLocaleString('id-ID')}</small></div><span className="jn-status">{displayStatus(group.status)}</span></div>
+          <div className="jn-token-management">
+            <div className="jn-token-management-copy">
+              <strong>Akses portal pelanggan: {group.hasActiveAccessToken ? 'Aktif' : 'Dicabut'}</strong>
+              <p>Terbitkan ulang token ketika pelanggan kehilangan akses. Token lama otomatis tidak berlaku setelah token baru diterbitkan.</p>
+              {issuedTokens[group.requestGroupId] && <div className="jn-issued-token">
+                <small>Token baru untuk {group.requestCode} — kirim secara privat</small>
+                <code>{issuedTokens[group.requestGroupId]}</code>
+              </div>}
+            </div>
+            <div className="jn-inline-actions">
+              <button type="button" className="jn-button jn-button-outline" disabled={tokenActionGroup === group.requestGroupId} onClick={() => void reissueCustomerToken(group.requestGroupId)}>
+                {tokenActionGroup === group.requestGroupId ? 'Memproses…' : 'Terbitkan ulang token'}
+              </button>
+              {issuedTokens[group.requestGroupId] && <button type="button" className="jn-button jn-button-primary" onClick={() => void copyCustomerToken(group.requestGroupId)}>Salin token</button>}
+              {group.hasActiveAccessToken && <button type="button" className="jn-button jn-button-outline" disabled={tokenActionGroup === group.requestGroupId} onClick={() => void revokeCustomerToken(group.requestGroupId)}>Cabut akses</button>}
+            </div>
+          </div>
           <RequestPayments group={group} onAddPayment={saveDeposit} onVerifyPayment={verifyDeposit} onViewProof={viewPaymentProof} />
           {group.items.map((item) => <RequestEditor key={item.requestId} item={item} onUpdate={updateItem} onUpload={uploadPhoto} onAddUnit={addAndAssignUnit} />)}
           {group.status === 'customer_details_received' && group.verifiedDepositAmount > 0 && <div className="jn-finalize"><p>Deposit terverifikasi {formatRupiah(group.verifiedDepositAmount)}. Pastikan seluruh unit teralokasi dan harga final telah terisi.</p><button className="jn-button jn-button-primary" onClick={() => void makeFinalOrder(group.requestGroupId)}>Buat pesanan final</button></div>}

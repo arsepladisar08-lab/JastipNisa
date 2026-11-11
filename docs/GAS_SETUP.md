@@ -104,6 +104,18 @@ Manifest mendeklarasikan USER_DEPLOYING dan ANYONE_ANONYMOUS. Pilihan deployment
 
 Aplikasi belum siap menerima data pelanggan nyata sampai test matriks akses, upload file, request→unit→order, pembayaran, dan pengiriman lulus pada deployment staging.
 
+### Hubungkan website publik Vercel
+
+Setelah Web App GAS staging/production siap, tambahkan environment variable berikut pada project Vercel:
+
+~~~env
+VITE_GAS_WEBAPP_URL=https://script.google.com/macros/s/DEPLOYMENT_ID/exec
+~~~
+
+Gunakan URL Web App hasil deployment yang benar-benar aktif. Tambahkan pada environment yang diperlukan (Preview untuk staging dan Production untuk aplikasi live), lalu redeploy agar nilai `VITE_*` masuk ke bundle frontend. URL ini harus berupa HTTPS Apps Script Web App pada host `script.google.com`; query string dan fragment tidak digunakan. Jangan pernah menaruh password admin, token sesi, pepper, atau credential Google di environment variable frontend.
+
+Jika variable belum dikonfigurasi atau URL tidak valid, website Vercel tetap menampilkan jalur kontak WhatsApp lama. Tombol request membuka aplikasi GAS di tab baru; pelanggan memilih kembali produk dalam katalog GAS, karena pilihan produk dari katalog lama belum dipindahkan sebagai parameter/deep link.
+
 ## 8. Update dan deployment versi
 
 Setiap perubahan source:

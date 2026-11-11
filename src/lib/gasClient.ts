@@ -440,3 +440,46 @@ export function updateAdminOrderOptions(
 ) {
   return gasCall<{ saved: boolean }>('apiAdminUpdateOrderOptions', sessionToken, payload)
 }
+
+
+export type AdminExpense = {
+  expenseId: string
+  occurredAt: string
+  category: string
+  description: string
+  amount: number
+  orderId: string
+}
+
+export type AdminFinancialSummary = {
+  ordersCount: number
+  feeBilled: number
+  verifiedBankAndCash: number
+  verifiedShopeePayments: number
+  verifiedRefunds: number
+  outstandingBalances: number
+  recordedExpenses: number
+  allocatedUnitPurchaseCost: number
+}
+
+export function listAdminExpenses(sessionToken: string) {
+  return gasCall<AdminExpense[]>('apiAdminListExpenses', sessionToken)
+}
+
+export function getAdminFinancialSummary(sessionToken: string) {
+  return gasCall<AdminFinancialSummary>('apiAdminGetFinancialSummary', sessionToken)
+}
+
+export function addAdminExpense(
+  sessionToken: string,
+  payload: {
+    occurredAt: string
+    category: string
+    description: string
+    amount: number
+    orderId?: string
+    idempotencyKey: string
+  },
+) {
+  return gasCall<{ expenseId: string; reused: boolean }>('apiAdminAddExpense', sessionToken, payload)
+}

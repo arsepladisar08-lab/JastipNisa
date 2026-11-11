@@ -8,9 +8,9 @@ var JN_TABLE_SCHEMA = {
   Units: ['unit_id', 'unit_code', 'product_id', 'variant_id', 'actual_photo_file_ids_json', 'condition_notes', 'receipt_reference', 'purchase_price', 'selling_price', 'status', 'held_request_id', 'reserved_order_id', 'created_at', 'updated_at'],
   Orders: ['order_id', 'order_code', 'request_group_id', 'buyer_id', 'customer_name', 'customer_phone', 'shipping_address', 'shopee_username', 'shopee_checkout_url', 'product_count', 'product_subtotal', 'jastip_fee', 'shipping_fee', 'discount', 'total_amount', 'status', 'payment_status', 'courier', 'tracking_number', 'shipped_at', 'delivered_at', 'created_at', 'updated_at'],
   Order_Items: ['order_item_id', 'order_id', 'request_id', 'unit_id', 'product_id', 'variant_id', 'product_name_snapshot', 'variant_name_snapshot', 'quantity', 'unit_price', 'status', 'created_at'],
-  Payments: ['payment_id', 'request_group_id', 'request_id', 'order_id', 'type', 'amount', 'method', 'proof_file_id', 'verification_status', 'verified_at', 'verified_by', 'idempotency_key', 'occurred_at', 'notes', 'created_at'],
+  Payments: ['payment_id', 'request_group_id', 'request_id', 'order_id', 'type', 'amount', 'method', 'proof_file_id', 'verification_status', 'verified_at', 'verified_by', 'idempotency_key', 'idempotency_payload_hash', 'occurred_at', 'notes', 'created_at'],
   Shipments: ['shipment_id', 'order_id', 'courier', 'tracking_number', 'status', 'processed_at', 'shipped_at', 'delivered_at', 'notes', 'created_at', 'updated_at'],
-  Expenses: ['expense_id', 'occurred_at', 'category', 'description', 'amount', 'order_id', 'event_id', 'created_by', 'created_at', 'idempotency_key'],
+  Expenses: ['expense_id', 'occurred_at', 'category', 'description', 'amount', 'order_id', 'event_id', 'created_by', 'created_at', 'idempotency_key', 'idempotency_payload_hash'],
   Events: ['event_id', 'name', 'event_date', 'location', 'status', 'notes', 'created_at', 'updated_at'],
   Audit_Log: ['audit_id', 'actor_type', 'actor_id', 'action', 'entity_type', 'entity_id', 'details_json', 'created_at']
 }

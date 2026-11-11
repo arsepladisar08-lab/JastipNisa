@@ -243,7 +243,7 @@ function submitCustomerOrderDetails_(accessToken, details) {
 
     var buyer = findRecord_('Buyers', 'buyer_id', currentGroup.buyer_id)
     if (!buyer) throw publicError_('BUYER_NOT_FOUND', 'Data pelanggan tidak ditemukan.')
-    updateRecord_('Buyers', 'buyer_id', group.buyer_id, {
+    updateRecord_('Buyers', 'buyer_id', currentGroup.buyer_id, {
       name: name,
       phone: phone,
       phone_normalized: phoneNormalized,

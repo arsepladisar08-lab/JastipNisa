@@ -354,7 +354,6 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
         return failure('DECISION_ALREADY_RECORDED', 'Keputusan untuk item demo ini sudah tercatat.')
       }
       if (nextDecision === 'rejected') {
-        requests.filter((item) => item.requestId === request.requestId)
         units.filter((unit) => unit.heldRequestId === request.requestId && unit.status === 'held')
           .forEach((unit) => {
             unit.status = 'available'

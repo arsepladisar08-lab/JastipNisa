@@ -388,6 +388,7 @@ function apiAdminListRequests(sessionToken, statusFilter) {
       return {
         requestGroupId: String(group.request_group_id),
         orderId: String(group.order_id || ''),
+        hasActiveAccessToken: Boolean(group.access_token_hash) && !group.access_token_revoked_at,
         requestCode: String(group.request_code),
         status: String(group.status),
         createdAt: String(group.created_at),
@@ -431,6 +432,18 @@ function apiAdminListRequests(sessionToken, statusFilter) {
         })
       }
     })
+  })
+}
+
+function apiAdminReissueCustomerAccessToken(sessionToken, requestGroupId) {
+  return safeApi_(function () {
+    return reissueCustomerAccessTokenAsAdmin_(sessionToken, requestGroupId)
+  })
+}
+
+function apiAdminRevokeCustomerAccessToken(sessionToken, requestGroupId) {
+  return safeApi_(function () {
+    return revokeCustomerAccessTokenAsAdmin_(sessionToken, requestGroupId)
   })
 }
 

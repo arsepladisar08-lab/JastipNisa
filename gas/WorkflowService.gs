@@ -70,6 +70,62 @@ function updateRequestItemAsAdmin_(sessionToken, payload) {
   })
 }
 
+function reissueCustomerAccessTokenAsAdmin_(sessionToken, requestGroupId) {
+  var session = requireAdmin_(sessionToken)
+  var groupId = cleanText_(requestGroupId, 100, 'Request')
+
+  return withScriptLock_(function () {
+    var group = findRecord_('Request_Groups', 'request_group_id', groupId)
+    if (!group) throw publicError_('NOT_FOUND', 'Request pelanggan tidak ditemukan.')
+
+    // The new high-entropy token replaces the old hash; the old token stops
+    // working immediately. Only the new plaintext is returned to the admin.
+    var accessToken = createSessionToken_()
+    var now = isoNow_()
+    updateRecord_('Request_Groups', 'request_group_id', groupId, {
+      access_token_hash: customerTokenHash_(accessToken),
+      access_token_created_at: now,
+      access_token_revoked_at: '',
+      updated_at: now
+    })
+    try {
+      appendAudit_('admin', session.role, 'customer_access_token_reissued', 'request_group', groupId, {
+        requestCode: String(group.request_code)
+      })
+    } catch (auditError) {
+      console.error('Customer token reissue audit could not be written: ' + String(auditError))
+    }
+    return { accessToken: accessToken, requestCode: String(group.request_code) }
+  })
+}
+
+function revokeCustomerAccessTokenAsAdmin_(sessionToken, requestGroupId) {
+  var session = requireAdmin_(sessionToken)
+  var groupId = cleanText_(requestGroupId, 100, 'Request')
+
+  return withScriptLock_(function () {
+    var group = findRecord_('Request_Groups', 'request_group_id', groupId)
+    if (!group) throw publicError_('NOT_FOUND', 'Request pelanggan tidak ditemukan.')
+    if (group.access_token_revoked_at) {
+      return { revoked: true, alreadyRevoked: true }
+    }
+
+    var now = isoNow_()
+    updateRecord_('Request_Groups', 'request_group_id', groupId, {
+      access_token_revoked_at: now,
+      updated_at: now
+    })
+    try {
+      appendAudit_('admin', session.role, 'customer_access_token_revoked', 'request_group', groupId, {
+        requestCode: String(group.request_code)
+      })
+    } catch (auditError) {
+      console.error('Customer token revoke audit could not be written: ' + String(auditError))
+    }
+    return { revoked: true, alreadyRevoked: false }
+  })
+}
+
 function addUnitAsAdmin_(sessionToken, payload) {
   var session = requireAdmin_(sessionToken)
   var unitCode = cleanText_(payload && payload.unitCode, 50, 'Kode unit')

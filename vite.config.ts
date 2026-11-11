@@ -32,13 +32,11 @@ function appsScriptSingleHtmlPlugin(): Plugin {
 
       const script = entryChunk.code.replace(/<\/script/gi, '<\\/script')
       const scriptTag = '<script>' + script + '</script>'
-      html = html.replace(
-        /<script\b[^>]*src=(["'])[^"']+\1[^>]*>\s*<\/script>/i,
-        scriptTag,
-      )
-      if (!html.includes(scriptTag)) {
-        this.error('Could not inline the React entry into the Apps Script HTML template.')
+      const scriptMarker = '<script type="module" src="/src/gas/main.tsx"></script>'
+      if (!html.includes(scriptMarker)) {
+        this.error('Apps Script HTML template is missing its React entry marker.')
       }
+      html = html.replace(scriptMarker, scriptTag)
 
       if (cssText) {
         html = html.replace('</head>', '<style>' + cssText + '</style>\n</head>')

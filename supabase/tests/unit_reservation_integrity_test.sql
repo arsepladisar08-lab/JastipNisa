@@ -36,16 +36,17 @@ begin
 
   insert into public.orders (
     order_code, customer_name, customer_phone, shipping_address, total_amount, product_count
-  ) values
-    ('JN-TEST-' || replace(gen_random_uuid()::text, '-', ''), 'Test Buyer A', '620000000001', 'Test Address A', 100000, 1),
-    ('JN-TEST-' || replace(gen_random_uuid()::text, '-', ''), 'Test Buyer B', '620000000002', 'Test Address B', 100000, 1)
-  returning id into v_order_a;
+  ) values (
+    'JN-TEST-' || replace(gen_random_uuid()::text, '-', ''),
+    'Test Buyer A', '620000000001', 'Test Address A', 100000, 1
+  ) returning id into v_order_a;
 
-  select id into v_order_b
-  from public.orders
-  where customer_phone = '620000000002'
-  order by created_at desc
-  limit 1;
+  insert into public.orders (
+    order_code, customer_name, customer_phone, shipping_address, total_amount, product_count
+  ) values (
+    'JN-TEST-' || replace(gen_random_uuid()::text, '-', ''),
+    'Test Buyer B', '620000000002', 'Test Address B', 100000, 1
+  ) returning id into v_order_b;
 
   -- Variant mismatch must fail.
   begin

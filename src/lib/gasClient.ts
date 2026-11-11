@@ -162,6 +162,7 @@ export type AdminRequestPayment = {
   verificationStatus: string
   occurredAt: string
   notes: string
+  hasProof: boolean
 }
 
 export type AdminRequestGroup = {
@@ -326,5 +327,13 @@ export function verifyAdminPayment(
     sessionToken,
     paymentId,
     decision,
+  )
+}
+
+export function getAdminPaymentProof(sessionToken: string, paymentId: string) {
+  return gasCall<{ fileName: string; mimeType: string; base64: string }>(
+    'apiAdminGetPaymentProof',
+    sessionToken,
+    paymentId,
   )
 }

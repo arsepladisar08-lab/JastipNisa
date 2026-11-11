@@ -14,15 +14,22 @@ import {
   getCustomerPortal,
   getPublicCatalog,
   getPublicConfig,
+  listAdminCatalog,
+  listAdminOrders,
   listAdminRequests,
   logoutAdmin,
   respondToRequestItem,
+  saveAdminCatalogProduct,
+  saveAdminVariant,
   submitOrderDetails,
+  updateAdminOrderOptions,
   updateAdminRequestItem,
+  updateAdminShipment,
   uploadAdminPaymentProof,
   uploadAdminRequestPhoto,
   verifyAdminPayment,
   type AdminDashboard,
+  type AdminOrder,
   type AdminRequestGroup,
   type CatalogProduct,
   type CatalogVariant,
@@ -427,6 +434,7 @@ function AdminPage() {
   const [sessionToken, setSessionToken] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) || '')
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null)
   const [groups, setGroups] = useState<AdminRequestGroup[]>([])
+  const [orders, setOrders] = useState<AdminOrder[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -435,12 +443,14 @@ function AdminPage() {
     setLoading(true)
     setError('')
     try {
-      const [stats, requests] = await Promise.all([
+      const [stats, requests, orderList] = await Promise.all([
         getAdminDashboard(token),
         listAdminRequests(token, 'all'),
+        listAdminOrders(token),
       ])
       setDashboard(stats)
       setGroups(requests)
+      setOrders(orderList)
     } catch (reason) {
       sessionStorage.removeItem(ADMIN_SESSION_KEY)
       setSessionToken('')
@@ -587,6 +597,80 @@ function AdminPage() {
     }
   }
 
+  async function saveSettlement(orderId: string, form: HTMLFormElement) {
+    const values = new FormData(form)
+    const amount = Number(values.get('amount') || 0)
+    const method = String(values.get('method') || 'bank_transfer')
+    const type = String(values.get('type') || 'settlement')
+    const notes = String(values.get('notes') || '')
+    const proof = values.get('proof')
+    if (!Number.isFinite(amount) || amount <= 0 || !(proof instanceof File) || proof.size === 0) {
+      setError('Nominal pembayaran dan bukti wajib diisi.')
+      return
+    }
+    if (proof.size > 700000 || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(proof.type)) {
+      setError('Bukti pembayaran harus JPG, PNG, WebP, atau PDF maksimal 700 KB.')
+      return
+    }
+    if (type !== 'settlement' && type !== 'shopee') {
+      setError('Tipe pembayaran tidak didukung.')
+      return
+    }
+    try {
+      const base64 = await fileToBase64(proof)
+      const uploaded = await uploadAdminPaymentProof(sessionToken, {
+        fileName: proof.name,
+        mimeType: proof.type,
+        base64,
+      })
+      await addAdminPayment(sessionToken, {
+        orderId,
+        type: type as 'settlement' | 'shopee',
+        amount,
+        method,
+        proofFileId: uploaded.fileId,
+        idempotencyKey: window.crypto.randomUUID(),
+        notes,
+      })
+      setNotice('Pembayaran dicatat dan menunggu verifikasi admin.')
+      form.reset()
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Pembayaran belum dapat dicatat.')
+    }
+  }
+
+  async function updateShipment(orderId: string, form: HTMLFormElement) {
+    const values = new FormData(form)
+    try {
+      await updateAdminShipment(sessionToken, {
+        orderId,
+        courier: String(values.get('courier') || ''),
+        trackingNumber: String(values.get('trackingNumber') || ''),
+        status: String(values.get('status') || 'preparing') as 'preparing' | 'shipped' | 'delivered' | 'issue',
+        notes: String(values.get('notes') || ''),
+      })
+      setNotice('Status dan detail pengiriman berhasil disimpan.')
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Pengiriman belum dapat diperbarui.')
+    }
+  }
+
+  async function saveShopeeLink(orderId: string, form: HTMLFormElement) {
+    const values = new FormData(form)
+    try {
+      await updateAdminOrderOptions(sessionToken, {
+        orderId,
+        shopeeCheckoutUrl: String(values.get('shopeeCheckoutUrl') || '').trim(),
+      })
+      setNotice('Link checkout Shopee diperbarui.')
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Link checkout belum dapat disimpan.')
+    }
+  }
+
   return <AppShell>
     <div className="jn-admin-top"><div><span className="jn-eyebrow">OPERATIONS</span><h1>Admin workspace</h1><p>Kelola request, pencarian barang, unit fisik dan pesanan.</p></div><button type="button" className="jn-button jn-button-outline" onClick={() => void signOut()}>Keluar</button></div>
     {error && <div className="jn-alert jn-alert-error">{error}</div>}
@@ -599,6 +683,7 @@ function AdminPage() {
       <div><span>Order aktif</span><strong>{dashboard.activeOrders}</strong></div>
       <div><span>Pembayaran perlu dicek</span><strong>{dashboard.paymentsAwaitingVerification}</strong></div>
     </div>}
+    <CatalogManager sessionToken={sessionToken} onNotice={setNotice} onError={setError} />
     <section className="jn-section jn-admin-requests"><div className="jn-section-heading"><div><span className="jn-eyebrow">CUSTOMER REQUESTS</span><h2>Daftar request</h2><p>Periksa item, perbarui status pencarian, dan catat unit aktual.</p></div><button className="jn-button jn-button-outline" onClick={() => void refresh(sessionToken)}>Refresh</button></div>
       {loading && <div className="jn-state">Memuat data operasional…</div>}
       {!loading && groups.length === 0 && <div className="jn-empty"><strong>Belum ada request.</strong><span>Request pelanggan yang masuk akan muncul di sini.</span></div>}
@@ -612,6 +697,14 @@ function AdminPage() {
         </article>)}
       </div>
     </section>
+    <OrdersManager
+      orders={orders}
+      onAddPayment={saveSettlement}
+      onVerifyPayment={verifyDeposit}
+      onViewProof={viewPaymentProof}
+      onUpdateShipment={updateShipment}
+      onSaveShopeeLink={saveShopeeLink}
+    />
   </AppShell>
 }
 

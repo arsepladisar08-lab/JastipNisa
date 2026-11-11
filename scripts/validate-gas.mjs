@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { Script } from 'node:vm'
 
 const root = process.cwd()
 const required = [
@@ -35,15 +36,28 @@ for (const scope of [
   if (!scopes.includes(scope)) throw new Error('Missing OAuth scope: ' + scope)
 }
 
+// Parse all server files as one Apps Script V8 program. This is a syntax
+// check only; Apps Script services are not available in the CI Node runtime.
+const serverFiles = required.filter((path) => path.endsWith('.gs'))
+const serverSource = serverFiles.map((path) =>
+  '\n// ---- ' + path + ' ----\n' + readFileSync(resolve(root, path), 'utf8'),
+).join('\n')
+new Script(serverSource, { filename: 'JastipNisaAppsScriptBundle.gs' })
+
 const htmlPath = resolve(root, 'gas/Index.html')
 const html = readFileSync(htmlPath, 'utf8')
 if (!html.includes('<base target="_top">')) throw new Error('Apps Script HTML is missing base target _top.')
-if (/<script\b[^>]*\bsrc=/i.test(html)) throw new Error('Apps Script HTML still contains an external script reference.')
-if (/<link\b[^>]*\bstylesheet[^>]*\bhref=/i.test(html)) throw new Error('Apps Script HTML still contains an external stylesheet reference.')
+// Ignore JavaScript string literals; inspect only document markup around scripts.
+const markup = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '<script></script>')
+if (/<script\b[^>]*\bsrc=/i.test(markup)) throw new Error('Apps Script HTML still contains an external script reference.')
+if (/<link\b[^>]*\bstylesheet[^>]*\bhref=/i.test(markup)) throw new Error('Apps Script HTML still contains an external stylesheet reference.')
 if (!html.includes('JastipNisa')) throw new Error('Generated HTML does not contain the JastipNisa app shell.')
+if (!html.includes('google.script') || !html.includes('apiPublicGetCatalog')) {
+  throw new Error('Generated HTML is missing the React-to-Apps-Script client.')
+}
 if (html.includes('VITE_SUPABASE_URL') || html.includes('VITE_SUPABASE_ANON_KEY')) {
   throw new Error('Supabase environment identifiers must not be bundled in the GAS entrypoint.')
 }
 
 const bytes = statSync(htmlPath).size
-console.log('GAS validation passed. Bundle size: ' + Math.ceil(bytes / 1024) + ' KB')
+console.log('GAS validation passed. Server syntax checked: ' + serverFiles.length + ' files. Bundle size: ' + Math.ceil(bytes / 1024) + ' KB')

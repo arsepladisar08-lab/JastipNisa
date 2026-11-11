@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
-import GasApp from './gas/GasApp'
+import GasApp from './GasApp'
 import './gas/gas.css'
 
 const root = document.getElementById('root')

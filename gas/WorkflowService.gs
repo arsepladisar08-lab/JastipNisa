@@ -19,10 +19,15 @@ function updateRequestItemAsAdmin_(sessionToken, payload) {
       throw publicError_('INVALID_TRANSITION', 'Perubahan status tidak diizinkan dari status saat ini.')
     }
 
+    var nextCondition = cleanText_(payload.actualCondition || '', 1000, 'Catatan kondisi')
     var patch = {
       status: nextStatus,
-      actual_condition: cleanText_(payload.actualCondition || '', 1000, 'Catatan kondisi'),
+      actual_condition: nextCondition,
       updated_at: isoNow_()
+    }
+    if (current === 'found' && nextStatus === 'found' &&
+        String(request.actual_condition || '') !== nextCondition) {
+      patch.customer_decision = ''
     }
     if (current === 'found' && nextStatus === 'searching') {
       // A new search cycle invalidates the previous photo approval and releases
@@ -174,6 +179,15 @@ function createOrderAsAdmin_(sessionToken, requestGroupId) {
       if (String(existingOrder.status) === 'creating') {
         return recoverOrderCreation_(session, requestGroupId, existingOrder)
       }
+      // Ensure verified request-stage deposits are attached when recovering an
+      // order row whose last write completed just before a runtime interruption.
+      readRecords_('Payments').filter(function (payment) {
+        return String(payment.request_group_id) === String(requestGroupId) &&
+          !payment.order_id && String(payment.verification_status) === 'verified'
+      }).forEach(function (payment) {
+        updateRecord_('Payments', 'payment_id', payment.payment_id, { order_id: existingOrder.order_id })
+      })
+      recalculateOrderPaymentStatus_(existingOrder.order_id)
       // Repair the parent status if a prior run finished the order row but
       // stopped before updating the request group pointer.
       if (String(group.status) !== 'order_created' || String(group.order_id || '') !== String(existingOrder.order_id)) {

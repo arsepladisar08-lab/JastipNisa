@@ -59,13 +59,51 @@ function normalizeSheetValue_(value) {
   return value
 }
 
+var JN_DB_READ_CACHE_ = Object.create(null)
+var JN_DB_METRICS_ = { rangeReads: 0, rangeWrites: 0, cacheHits: 0, batchWriteGroups: 0 }
+
+function resetDatabaseExecutionCache_() {
+  JN_DB_READ_CACHE_ = Object.create(null)
+  JN_DB_METRICS_ = { rangeReads: 0, rangeWrites: 0, cacheHits: 0, batchWriteGroups: 0 }
+}
+
+function invalidateDatabaseReadCache_(tableName) {
+  delete JN_DB_READ_CACHE_[tableName]
+}
+
+function getDatabaseExecutionMetrics_() {
+  return {
+    rangeReads: JN_DB_METRICS_.rangeReads,
+    rangeWrites: JN_DB_METRICS_.rangeWrites,
+    cacheHits: JN_DB_METRICS_.cacheHits,
+    batchWriteGroups: JN_DB_METRICS_.batchWriteGroups
+  }
+}
+
+function cloneDatabaseRecords_(records) {
+  return records.map(function (record) {
+    var copy = {}
+    Object.keys(record).forEach(function (key) { copy[key] = record[key] })
+    return copy
+  })
+}
+
 function readRecords_(tableName) {
+  if (Object.prototype.hasOwnProperty.call(JN_DB_READ_CACHE_, tableName)) {
+    JN_DB_METRICS_.cacheHits += 1
+    return cloneDatabaseRecords_(JN_DB_READ_CACHE_[tableName])
+  }
+
   var sheet = getSheet_(tableName)
   var lastRow = sheet.getLastRow()
   var headers = getTableHeaders_(sheet)
-  if (lastRow < 2 || headers.length === 0) return []
+  if (lastRow < 2 || headers.length === 0) {
+    JN_DB_READ_CACHE_[tableName] = []
+    return []
+  }
 
-  return sheet.getRange(2, 1, lastRow - 1, headers.length).getValues()
+  JN_DB_METRICS_.rangeReads += 1
+  var records = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues()
     .filter(function (row) { return row.some(function (value) { return value !== '' && value !== null }) })
     .map(function (row) {
       var record = {}
@@ -75,6 +113,8 @@ function readRecords_(tableName) {
       })
       return record
     })
+  JN_DB_READ_CACHE_[tableName] = records
+  return cloneDatabaseRecords_(records)
 }
 
 function appendRecords_(tableName, records) {
@@ -86,6 +126,8 @@ function appendRecords_(tableName, records) {
   })
   var startRow = Math.max(sheet.getLastRow(), 1) + 1
   sheet.getRange(startRow, 1, rows.length, headers.length).setValues(rows)
+  JN_DB_METRICS_.rangeWrites += 1
+  invalidateDatabaseReadCache_(tableName)
 }
 
 function findRecord_(tableName, idField, idValue) {
@@ -97,32 +139,72 @@ function findRecord_(tableName, idField, idValue) {
 }
 
 function updateRecord_(tableName, idField, idValue, patch) {
+  var updated = updateRecordsById_(tableName, idField, [{ id: idValue, patch: patch }])
+  return updated > 0
+}
+
+// Apply multiple ID-keyed patches with one key-column read and one data write
+// per contiguous row group. All callers must already hold the script lock.
+function updateRecordsById_(tableName, idField, updates) {
+  if (!updates || !updates.length) return 0
   var sheet = getSheet_(tableName)
   var headers = getTableHeaders_(sheet)
   var keyColumn = headers.indexOf(idField) + 1
   if (keyColumn < 1) throw new Error('Primary key tidak ditemukan pada ' + tableName)
 
   var lastRow = sheet.getLastRow()
-  if (lastRow < 2) return false
-  var values = sheet.getRange(2, keyColumn, lastRow - 1, 1).getDisplayValues()
-  var rowNumber = -1
-  for (var i = 0; i < values.length; i += 1) {
-    if (String(values[i][0]) === String(idValue)) {
-      rowNumber = i + 2
-      break
-    }
-  }
-  if (rowNumber < 0) return false
+  if (lastRow < 2) return 0
 
-  var rowRange = sheet.getRange(rowNumber, 1, 1, headers.length)
-  var row = rowRange.getValues()[0]
-  headers.forEach(function (header, index) {
-    if (Object.prototype.hasOwnProperty.call(patch, header)) {
-      row[index] = normalizeSheetValue_(patch[header])
+  JN_DB_METRICS_.rangeReads += 1
+  var keyValues = sheet.getRange(2, keyColumn, lastRow - 1, 1).getDisplayValues()
+  var rowById = Object.create(null)
+  keyValues.forEach(function (row, index) {
+    var key = String(row[0])
+    if (key && !Object.prototype.hasOwnProperty.call(rowById, key)) rowById[key] = index + 2
+  })
+
+  var patchesByRow = Object.create(null)
+  updates.forEach(function (update) {
+    if (!update || update.id === undefined || update.id === null) return
+    var rowNumber = rowById[String(update.id)]
+    if (!rowNumber) return
+    patchesByRow[rowNumber] = Object.assign(patchesByRow[rowNumber] || {}, update.patch || {})
+  })
+
+  var targetRows = Object.keys(patchesByRow).map(Number).sort(function (a, b) { return a - b })
+  if (!targetRows.length) return 0
+
+  var groups = []
+  targetRows.forEach(function (rowNumber) {
+    var current = groups[groups.length - 1]
+    if (!current || rowNumber > current.end + 1) {
+      groups.push({ start: rowNumber, end: rowNumber, rows: [rowNumber] })
+    } else {
+      current.end = rowNumber
+      current.rows.push(rowNumber)
     }
   })
-  rowRange.setValues([row])
-  return true
+
+  groups.forEach(function (group) {
+    var range = sheet.getRange(group.start, 1, group.end - group.start + 1, headers.length)
+    JN_DB_METRICS_.rangeReads += 1
+    var values = range.getValues()
+    group.rows.forEach(function (rowNumber) {
+      var row = values[rowNumber - group.start]
+      var patch = patchesByRow[rowNumber]
+      headers.forEach(function (header, index) {
+        if (Object.prototype.hasOwnProperty.call(patch, header)) {
+          row[index] = normalizeSheetValue_(patch[header])
+        }
+      })
+    })
+    range.setValues(values)
+    JN_DB_METRICS_.rangeWrites += 1
+    JN_DB_METRICS_.batchWriteGroups += 1
+  })
+
+  invalidateDatabaseReadCache_(tableName)
+  return targetRows.length
 }
 
 function appendAudit_(actorType, actorId, action, entityType, entityId, details) {
@@ -142,9 +224,13 @@ function appendAudit_(actorType, actorId, action, entityType, entityId, details)
 function withScriptLock_(callback) {
   var lock = LockService.getScriptLock()
   lock.waitLock(15000)
+  // Each locked mutation starts with a fresh sheet snapshot. Repeated reads
+  // during that one transaction can reuse it, and all writes invalidate it.
+  resetDatabaseExecutionCache_()
   try {
     return callback()
   } finally {
+    resetDatabaseExecutionCache_()
     lock.releaseLock()
   }
 }

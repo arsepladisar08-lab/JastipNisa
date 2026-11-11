@@ -413,26 +413,28 @@ function apiAdminGetFinancialSummary(sessionToken) {
     var expenses = readRecords_('Expenses')
     var units = readRecords_('Units')
 
-    var bankAndCash = payments.filter(function (row) {
-      return String(row.type) !== 'shopee' && String(row.type) !== 'refund'
-    }).reduce(function (sum, row) { return sum + Number(row.amount || 0) }, 0)
-    var shopee = payments.filter(function (row) {
-      return String(row.type) === 'shopee'
-    }).reduce(function (sum, row) { return sum + Number(row.amount || 0) }, 0)
-    var refunds = payments.filter(function (row) {
-      return String(row.type) === 'refund'
-    }).reduce(function (sum, row) { return sum + Number(row.amount || 0) }, 0)
-    var feeBilled = orders.reduce(function (sum, row) {
-      return sum + Number(row.jastip_fee || 0)
-    }, 0)
+    var bankAndCash = 0
+    var shopee = 0
+    var refunds = 0
+    var paidByOrder = Object.create(null)
+    payments.forEach(function (row) {
+      var amount = Number(row.amount || 0)
+      var type = String(row.type)
+      if (type === 'shopee') shopee += amount
+      else if (type === 'refund') refunds += amount
+      else bankAndCash += amount
+
+      var orderId = String(row.order_id || '')
+      if (orderId) {
+        paidByOrder[orderId] = (paidByOrder[orderId] || 0) + (type === 'refund' ? -amount : amount)
+      }
+    })
+
+    var feeBilled = 0
     var outstanding = 0
     orders.forEach(function (order) {
-      var paid = payments.filter(function (payment) {
-        return String(payment.order_id) === String(order.order_id)
-      }).reduce(function (sum, payment) {
-        var amount = Number(payment.amount || 0)
-        return sum + (String(payment.type) === 'refund' ? -amount : amount)
-      }, 0)
+      feeBilled += Number(order.jastip_fee || 0)
+      var paid = paidByOrder[String(order.order_id)] || 0
       outstanding += Math.max(0, Number(order.total_amount || 0) - paid)
     })
     var expensesTotal = expenses.reduce(function (sum, row) {

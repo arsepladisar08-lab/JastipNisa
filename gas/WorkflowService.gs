@@ -499,17 +499,35 @@ function addPaymentAsAdmin_(sessionToken, payload) {
   var orderId = cleanText_(payload && payload.orderId || '', 100, 'Order')
   var requestGroupId = cleanText_(payload && payload.requestGroupId || '', 100, 'Request')
   var idempotencyKey = cleanText_(payload && payload.idempotencyKey, 100, 'ID transaksi')
+  var method = cleanText_(payload && payload.method || 'bank_transfer', 40, 'Metode pembayaran')
+  var proofFileId = cleanText_(payload && payload.proofFileId || '', 150, 'Bukti pembayaran')
+  var occurredAt = cleanText_(payload && payload.occurredAt || isoNow_(), 40, 'Tanggal transaksi')
+  var notes = cleanText_(payload && payload.notes || '', 500, 'Catatan')
   if (supported.indexOf(type) === -1 || !Number.isFinite(amount) || amount <= 0 ||
-      idempotencyKey.length < 16 || (!orderId && !requestGroupId)) {
+      idempotencyKey.length < 16 || Boolean(orderId) === Boolean(requestGroupId)) {
     throw publicError_('INVALID_PAYMENT', 'Periksa tipe transaksi, nominal, dan referensi pembayaran.')
   }
+  var payloadHash = sha256Hex_(JSON.stringify({
+    requestGroupId: requestGroupId,
+    orderId: orderId,
+    type: type,
+    amount: amount,
+    method: method,
+    occurredAt: occurredAt,
+    notes: notes
+  }))
   return withScriptLock_(function () {
-    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
     session = requireAdmin_(sessionToken)
     var duplicate = readRecords_('Payments').filter(function (row) {
       return String(row.idempotency_key) === idempotencyKey
     })[0]
-    if (duplicate) return { paymentId: duplicate.payment_id, reused: true }
+    if (duplicate) {
+      var storedHash = String(duplicate.idempotency_payload_hash || '')
+      if (storedHash && !constantTimeEqual_(storedHash, payloadHash)) {
+        throw publicError_('IDEMPOTENCY_CONFLICT', 'Kunci transaksi sudah digunakan untuk data pembayaran yang berbeda.')
+      }
+      return { paymentId: duplicate.payment_id, reused: true }
+    }
     if (orderId && !findRecord_('Orders', 'order_id', orderId)) {
       throw publicError_('ORDER_NOT_FOUND', 'Pesanan tidak ditemukan.')
     }
@@ -524,14 +542,15 @@ function addPaymentAsAdmin_(sessionToken, payload) {
       order_id: orderId,
       type: type,
       amount: amount,
-      method: cleanText_(payload.method || 'bank_transfer', 40, 'Metode pembayaran'),
-      proof_file_id: cleanText_(payload.proofFileId || '', 150, 'Bukti pembayaran'),
+      method: method,
+      proof_file_id: proofFileId,
       verification_status: 'awaiting_verification',
       verified_at: '',
       verified_by: '',
       idempotency_key: idempotencyKey,
-      occurred_at: cleanText_(payload.occurredAt || isoNow_(), 40, 'Tanggal transaksi'),
-      notes: cleanText_(payload.notes || '', 500, 'Catatan'),
+      idempotency_payload_hash: payloadHash,
+      occurred_at: occurredAt,
+      notes: notes,
       created_at: isoNow_()
     }])
     appendAudit_('admin', session.role, 'payment_recorded', 'payment', paymentId, { type: type, amount: amount })
@@ -546,23 +565,26 @@ function verifyPaymentAsAdmin_(sessionToken, paymentId, decision) {
     throw publicError_('INVALID_DECISION', 'Keputusan verifikasi pembayaran tidak valid.')
   }
   return withScriptLock_(function () {
-    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
     session = requireAdmin_(sessionToken)
     var payment = findRecord_('Payments', 'payment_id', paymentId)
     if (!payment) throw publicError_('NOT_FOUND', 'Catatan pembayaran tidak ditemukan.')
-    if (String(payment.verification_status) !== 'awaiting_verification') {
-      throw publicError_('INVALID_STATE', 'Pembayaran ini sudah pernah diverifikasi.')
+    var currentStatus = String(payment.verification_status || '')
+    if (currentStatus === nextStatus) {
+      return { saved: true, verificationStatus: currentStatus, reused: true }
+    }
+    if (currentStatus !== 'awaiting_verification') {
+      throw publicError_('INVALID_STATE', 'Pembayaran ini sudah diputuskan dengan status berbeda.')
     }
     updateRecord_('Payments', 'payment_id', paymentId, {
       verification_status: nextStatus,
       verified_at: nextStatus === 'verified' ? isoNow_() : '',
-      verified_by: session.role,
+      verified_by: session.role
     })
-    if (payment.order_id && nextStatus === 'verified') {
+    if (payment.order_id) {
       recalculateOrderPaymentStatus_(payment.order_id)
     }
     appendAudit_('admin', session.role, 'payment_' + nextStatus, 'payment', paymentId, {})
-    return { saved: true, verificationStatus: nextStatus }
+    return { saved: true, verificationStatus: nextStatus, reused: false }
   })
 }
 

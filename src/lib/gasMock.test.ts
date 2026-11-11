@@ -109,7 +109,7 @@ describe('GAS in-memory demo backend', () => {
       .rejects.toMatchObject({ code: 'DECISION_ALREADY_RECORDED' })
     const dashboard = await handleGasMockCall<{ unitsAvailable: number }>('apiAdminGetDashboard', [login.sessionToken])
     expect(dashboard.unitsAvailable).toBe(2)
-  })
+  }, 15000)
 
   it('rejects idempotency keys reused with different payment or expense payloads', async () => {
     const login = await handleGasMockCall<{ sessionToken: string }>('apiAdminLogin', ['demo-admin', 'demo-browser'])

@@ -317,6 +317,12 @@ function apiAdminUploadPaymentProof(sessionToken, payload) {
   })
 }
 
+function apiAdminGetPaymentProof(sessionToken, paymentId) {
+  return safeApi_(function () {
+    return getPaymentProofAsAdmin_(sessionToken, paymentId)
+  })
+}
+
 function apiAdminSaveCatalogProduct(sessionToken, payload) {
   return safeApi_(function () {
     return saveCatalogProductAsAdmin_(sessionToken, payload)

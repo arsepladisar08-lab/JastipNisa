@@ -17,6 +17,7 @@ import {
   getCustomerPortal,
   getPublicCatalog,
   getPublicConfig,
+  isGasMockEnabled,
   listAdminCatalog,
   listAdminExpenses,
   listAdminOrders,

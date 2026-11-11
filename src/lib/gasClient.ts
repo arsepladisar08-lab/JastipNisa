@@ -139,6 +139,7 @@ export type CustomerPortal = {
     orderCode: string
     status: string
     totalAmount: number
+    paymentStatus: string
     shopeeCheckoutUrl: string
     trackingNumber: string
     courier: string
@@ -301,7 +302,8 @@ export function uploadAdminPaymentProof(
 export function addAdminPayment(
   sessionToken: string,
   payload: {
-    requestGroupId: string
+    requestGroupId?: string
+    orderId?: string
     type: 'deposit' | 'settlement' | 'shipping' | 'refund' | 'shopee'
     amount: number
     method: string
@@ -336,4 +338,104 @@ export function getAdminPaymentProof(sessionToken: string, paymentId: string) {
     sessionToken,
     paymentId,
   )
+}
+
+export type AdminCatalogProduct = CatalogProduct & {
+  isActive: boolean
+  sortOrder: number
+}
+
+export type AdminCatalogVariant = CatalogVariant & {
+  isActive: boolean
+}
+
+export type AdminOrder = {
+  orderId: string
+  orderCode: string
+  requestGroupId: string
+  customerName: string
+  customerPhone: string
+  shippingAddress: string
+  productCount: number
+  subtotal: number
+  fee: number
+  shippingFee: number
+  totalAmount: number
+  totalPaid: number
+  balance: number
+  paymentStatus: string
+  status: string
+  shopeeUsername: string
+  shopeeCheckoutUrl: string
+  courier: string
+  trackingNumber: string
+  shipmentStatus: string
+  createdAt: string
+  payments: AdminRequestPayment[]
+}
+
+export function listAdminCatalog(sessionToken: string) {
+  return gasCall<{ products: AdminCatalogProduct[]; variants: AdminCatalogVariant[] }>(
+    'apiAdminListCatalog',
+    sessionToken,
+  )
+}
+
+export function saveAdminCatalogProduct(
+  sessionToken: string,
+  payload: {
+    productId?: string
+    name: string
+    slug: string
+    category?: string
+    referencePrice: number
+    officialUrl: string
+    imageUrl?: string
+    sourceCheckedAt: string
+    isActive: boolean
+    sortOrder?: number
+  },
+) {
+  return gasCall<{ productId: string; saved: boolean }>('apiAdminSaveCatalogProduct', sessionToken, payload)
+}
+
+export function saveAdminVariant(
+  sessionToken: string,
+  payload: {
+    variantId?: string
+    productId: string
+    name: string
+    imageUrl?: string
+    isActive: boolean
+  },
+) {
+  return gasCall<{ variantId: string; saved: boolean }>('apiAdminSaveVariant', sessionToken, payload)
+}
+
+export function listAdminOrders(sessionToken: string) {
+  return gasCall<AdminOrder[]>('apiAdminListOrders', sessionToken)
+}
+
+export function updateAdminShipment(
+  sessionToken: string,
+  payload: {
+    orderId: string
+    courier: string
+    trackingNumber: string
+    status: 'preparing' | 'shipped' | 'delivered' | 'issue'
+    notes?: string
+  },
+) {
+  return gasCall<{ saved: boolean; status: string; orderStatus: string }>(
+    'apiAdminUpdateShipment',
+    sessionToken,
+    payload,
+  )
+}
+
+export function updateAdminOrderOptions(
+  sessionToken: string,
+  payload: { orderId: string; shopeeCheckoutUrl: string },
+) {
+  return gasCall<{ saved: boolean }>('apiAdminUpdateOrderOptions', sessionToken, payload)
 }

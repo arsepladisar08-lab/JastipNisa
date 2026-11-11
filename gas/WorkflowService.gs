@@ -6,6 +6,8 @@ function updateRequestItemAsAdmin_(sessionToken, payload) {
   if (allowed.indexOf(nextStatus) === -1) throw publicError_('INVALID_STATUS', 'Status pencarian tidak valid.')
 
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     var request = findRecord_('Requests', 'request_id', requestId)
     if (!request) throw publicError_('NOT_FOUND', 'Request item tidak ditemukan.')
     var current = String(request.status)
@@ -75,6 +77,8 @@ function reissueCustomerAccessTokenAsAdmin_(sessionToken, requestGroupId) {
   var groupId = cleanText_(requestGroupId, 100, 'Request')
 
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     var group = findRecord_('Request_Groups', 'request_group_id', groupId)
     if (!group) throw publicError_('NOT_FOUND', 'Request pelanggan tidak ditemukan.')
 
@@ -104,6 +108,8 @@ function revokeCustomerAccessTokenAsAdmin_(sessionToken, requestGroupId) {
   var groupId = cleanText_(requestGroupId, 100, 'Request')
 
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     var group = findRecord_('Request_Groups', 'request_group_id', groupId)
     if (!group) throw publicError_('NOT_FOUND', 'Request pelanggan tidak ditemukan.')
     if (group.access_token_revoked_at) {
@@ -139,6 +145,8 @@ function addUnitAsAdmin_(sessionToken, payload) {
   }
 
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     if (readRecords_('Units').some(function (row) { return String(row.unit_code).toLowerCase() === unitCode.toLowerCase() })) {
       throw publicError_('DUPLICATE_UNIT_CODE', 'Kode unit sudah digunakan.')
     }
@@ -177,6 +185,8 @@ function addUnitAsAdmin_(sessionToken, payload) {
 function assignUnitAsAdmin_(sessionToken, requestId, unitId) {
   var session = requireAdmin_(sessionToken)
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     var request = findRecord_('Requests', 'request_id', requestId)
     var unit = findRecord_('Units', 'unit_id', unitId)
     if (!request || !unit) throw publicError_('NOT_FOUND', 'Request atau unit fisik tidak ditemukan.')
@@ -215,6 +225,8 @@ function assignUnitAsAdmin_(sessionToken, requestId, unitId) {
 function createOrderAsAdmin_(sessionToken, requestGroupId) {
   var session = requireAdmin_(sessionToken)
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     var group = findRecord_('Request_Groups', 'request_group_id', requestGroupId)
     if (!group) throw publicError_('NOT_FOUND', 'Request pelanggan tidak ditemukan.')
 
@@ -492,6 +504,8 @@ function addPaymentAsAdmin_(sessionToken, payload) {
     throw publicError_('INVALID_PAYMENT', 'Periksa tipe transaksi, nominal, dan referensi pembayaran.')
   }
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     var duplicate = readRecords_('Payments').filter(function (row) {
       return String(row.idempotency_key) === idempotencyKey
     })[0]
@@ -532,6 +546,8 @@ function verifyPaymentAsAdmin_(sessionToken, paymentId, decision) {
     throw publicError_('INVALID_DECISION', 'Keputusan verifikasi pembayaran tidak valid.')
   }
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     var payment = findRecord_('Payments', 'payment_id', paymentId)
     if (!payment) throw publicError_('NOT_FOUND', 'Catatan pembayaran tidak ditemukan.')
     if (String(payment.verification_status) !== 'awaiting_verification') {
@@ -563,6 +579,8 @@ function updateShipmentAsAdmin_(sessionToken, payload) {
   }
 
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     var order = findRecord_('Orders', 'order_id', orderId)
     if (!order) throw publicError_('ORDER_NOT_FOUND', 'Pesanan tidak ditemukan.')
     if (String(order.status) === 'cancelled' || String(order.status) === 'completed') {
@@ -628,6 +646,8 @@ function addExpenseAsAdmin_(sessionToken, payload) {
     throw publicError_('INVALID_EXPENSE', 'Periksa kategori, nominal, dan tanggal pengeluaran.')
   }
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     var idempotencyKey = cleanText_(payload.idempotencyKey || '', 100, 'ID transaksi')
     if (idempotencyKey && idempotencyKey.length < 16) {
       throw publicError_('INVALID_IDEMPOTENCY_KEY', 'ID transaksi tidak valid.')
@@ -664,6 +684,8 @@ function updateOrderOptionsAsAdmin_(sessionToken, payload) {
     throw publicError_('INVALID_SHOPEE_URL', 'Link checkout Shopee harus menggunakan HTTPS.')
   }
   return withScriptLock_(function () {
+    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
+    session = requireAdmin_(sessionToken)
     var order = findRecord_('Orders', 'order_id', orderId)
     if (!order) throw publicError_('ORDER_NOT_FOUND', 'Pesanan tidak ditemukan.')
     if (['cancelled', 'completed'].indexOf(String(order.status)) !== -1) {

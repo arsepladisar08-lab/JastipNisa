@@ -80,6 +80,32 @@ function createSecureToken() {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+function getHiddenFormField(form: HTMLFormElement, name: string): HTMLInputElement {
+  let field = form.querySelector<HTMLInputElement>('input[type="hidden"][name="' + name + '"]')
+  if (!field) {
+    field = document.createElement('input')
+    field.type = 'hidden'
+    field.name = name
+    form.appendChild(field)
+  }
+  return field
+}
+
+function getFormIdempotencyKey(form: HTMLFormElement, payload: Record<string, string | number>): string {
+  const keyField = getHiddenFormField(form, '_jn_idempotency_key')
+  const fingerprintField = getHiddenFormField(form, '_jn_idempotency_fingerprint')
+  const fingerprint = JSON.stringify(payload)
+  if (!keyField.value || fingerprintField.value !== fingerprint) {
+    keyField.value = window.crypto.randomUUID()
+  }
+  fingerprintField.value = fingerprint
+  return keyField.value
+}
+
+function clearFormRetryState(form: HTMLFormElement): void {
+  form.querySelectorAll('input[type="hidden"][name^="_jn_"]').forEach((field) => field.remove())
+}
+
 function displayStatus(status: string) {
   const labels: Record<string, string> = {
     new: 'Baru masuk',
@@ -723,20 +749,32 @@ function AdminPage() {
       setError('Bukti pembayaran harus berupa JPG, PNG, WebP, atau PDF.')
       return
     }
+    const idempotencyKey = getFormIdempotencyKey(form, { requestGroupId: groupId, type: 'deposit', amount, method, notes })
+    const proofIdField = getHiddenFormField(form, '_jn_uploaded_proof_id')
+    const proofSignatureField = getHiddenFormField(form, '_jn_proof_signature')
+    const proofSignature = [proof.name, proof.size, proof.lastModified].join(':')
+    if (proofSignatureField.value && proofSignatureField.value !== proofSignature) proofIdField.value = ''
+    proofSignatureField.value = proofSignature
     setError('')
     try {
-      const prepared = await prepareUploadFile(proof)
-      const uploaded = await uploadAdminPaymentProof(sessionToken, prepared)
+      let proofFileId = proofIdField.value
+      if (!proofFileId) {
+        const prepared = await prepareUploadFile(proof)
+        const uploaded = await uploadAdminPaymentProof(sessionToken, prepared)
+        proofFileId = uploaded.fileId
+        proofIdField.value = proofFileId
+      }
       await addAdminPayment(sessionToken, {
         requestGroupId: groupId,
         type: 'deposit',
         amount,
         method,
-        proofFileId: uploaded.fileId,
-        idempotencyKey: window.crypto.randomUUID(),
+        proofFileId,
+        idempotencyKey,
         notes,
       })
       setNotice('Deposit dicatat. Lanjutkan dengan memeriksa bukti lalu klik verifikasi.')
+      clearFormRetryState(form)
       form.reset()
       await refresh(sessionToken)
     } catch (reason) {
@@ -794,19 +832,31 @@ function AdminPage() {
       setError('Tipe pembayaran tidak didukung.')
       return
     }
+    const idempotencyKey = getFormIdempotencyKey(form, { orderId, type, amount, method, notes })
+    const proofIdField = getHiddenFormField(form, '_jn_uploaded_proof_id')
+    const proofSignatureField = getHiddenFormField(form, '_jn_proof_signature')
+    const proofSignature = [proof.name, proof.size, proof.lastModified].join(':')
+    if (proofSignatureField.value && proofSignatureField.value !== proofSignature) proofIdField.value = ''
+    proofSignatureField.value = proofSignature
     try {
-      const prepared = await prepareUploadFile(proof)
-      const uploaded = await uploadAdminPaymentProof(sessionToken, prepared)
+      let proofFileId = proofIdField.value
+      if (!proofFileId) {
+        const prepared = await prepareUploadFile(proof)
+        const uploaded = await uploadAdminPaymentProof(sessionToken, prepared)
+        proofFileId = uploaded.fileId
+        proofIdField.value = proofFileId
+      }
       await addAdminPayment(sessionToken, {
         orderId,
         type: type as 'settlement' | 'shopee',
         amount,
         method,
-        proofFileId: uploaded.fileId,
-        idempotencyKey: window.crypto.randomUUID(),
+        proofFileId,
+        idempotencyKey,
         notes,
       })
       setNotice('Pembayaran dicatat dan menunggu verifikasi admin.')
+      clearFormRetryState(form)
       form.reset()
       await refresh(sessionToken)
     } catch (reason) {
@@ -856,20 +906,23 @@ function AdminPage() {
       return
     }
     try {
+      const idempotencyKey = getFormIdempotencyKey(form, { amount, occurredAt, category, description })
       await addAdminExpense(sessionToken, {
         amount,
         occurredAt,
         category,
         description,
-        idempotencyKey: window.crypto.randomUUID(),
+        idempotencyKey,
       })
       setNotice('Pengeluaran berhasil dicatat.')
+      clearFormRetryState(form)
       form.reset()
       await refresh(sessionToken)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Pengeluaran gagal dicatat.')
     }
   }
+
 
   return <AppShell>
     <div className="jn-admin-top"><div><span className="jn-eyebrow">OPERATIONS</span><h1>Admin workspace</h1><p>Kelola request, pencarian barang, unit fisik dan pesanan.</p></div><div className="jn-admin-top-actions"><button type="button" className="jn-button jn-button-outline" onClick={() => setSecurityFormOpen((open) => !open)}>{securityFormOpen ? 'Tutup keamanan' : 'Keamanan akun'}</button><button type="button" className="jn-button jn-button-outline" onClick={() => void signOut()}>Keluar</button></div></div>

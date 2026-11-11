@@ -148,6 +148,101 @@ describe('GAS in-memory demo backend', () => {
       .rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' })
   })
 
+  it('records cancellation requests and admin acceptance without mutating order, payment or stock', async () => {
+    const token = 'demo_customer_token_0000000000000000000000000000000000000000000000000000000000000000'
+    const login = await handleGasMockCall<{ sessionToken: string }>('apiAdminLogin', ['demo-admin', 'demo-browser'])
+    const beforeOrders = await handleGasMockCall<Array<{ orderId: string; status: string; totalPaid: number; totalAmount: number; payments: unknown[] }>>(
+      'apiAdminListOrders', [login.sessionToken],
+    )
+    const beforeFinance = await handleGasMockCall<{ allocatedUnitPurchaseCost: number; verifiedBankAndCash: number; verifiedRefunds: number }>(
+      'apiAdminGetFinancialSummary', [login.sessionToken],
+    )
+    const payloadReason = 'Saya perlu mengubah rencana perjalanan.'
+    const first = await handleGasMockCall<{ cancellationRequestId: string; status: string; reused: boolean }>(
+      'apiCustomerRequestOrderCancellation', [token, payloadReason],
+    )
+    const retry = await handleGasMockCall<{ cancellationRequestId: string; status: string; reused: boolean }>(
+      'apiCustomerRequestOrderCancellation', [token, payloadReason],
+    )
+    expect(first).toMatchObject({ status: 'pending', reused: false })
+    expect(retry).toMatchObject({ cancellationRequestId: first.cancellationRequestId, status: 'pending', reused: true })
+
+    const pendingOrders = await handleGasMockCall<Array<{ cancellationRequests: Array<{ status: string; reason: string }> }>>(
+      'apiAdminListOrders', [login.sessionToken],
+    )
+    expect(pendingOrders[0].cancellationRequests[0]).toMatchObject({ status: 'pending', reason: payloadReason })
+
+    const reviewed = await handleGasMockCall<{ saved: boolean; status: string; orderChanged: boolean; executionDeferred: boolean }>(
+      'apiAdminReviewCancellationRequest',
+      [login.sessionToken, first.cancellationRequestId, 'accepted', 'Diterima untuk tindak lanjut manual.'],
+    )
+    expect(reviewed).toMatchObject({
+      saved: true,
+      status: 'accepted_pending_execution',
+      orderChanged: false,
+      executionDeferred: true,
+    })
+    const afterOrders = await handleGasMockCall<Array<{ orderId: string; status: string; totalPaid: number; totalAmount: number; payments: unknown[] }>>(
+      'apiAdminListOrders', [login.sessionToken],
+    )
+    const afterFinance = await handleGasMockCall<{ allocatedUnitPurchaseCost: number; verifiedBankAndCash: number; verifiedRefunds: number }>(
+      'apiAdminGetFinancialSummary', [login.sessionToken],
+    )
+    expect(afterOrders[0]).toMatchObject({
+      orderId: beforeOrders[0].orderId,
+      status: beforeOrders[0].status,
+      totalPaid: beforeOrders[0].totalPaid,
+      totalAmount: beforeOrders[0].totalAmount,
+      payments: beforeOrders[0].payments,
+    })
+    expect(afterFinance).toEqual(beforeFinance)
+
+    const portal = await handleGasMockCall<{ order: { status: string; canRequestCancellation: boolean; cancellationRequests: Array<{ status: string; reviewNote: string }> } }>(
+      'apiCustomerGetPortal', [token],
+    )
+    expect(portal.order).toMatchObject({
+      status: beforeOrders[0].status,
+      canRequestCancellation: false,
+      cancellationRequests: [{ status: 'accepted_pending_execution', reviewNote: 'Diterima untuk tindak lanjut manual.' }],
+    })
+    await expect(handleGasMockCall('apiAdminReviewCancellationRequest', [
+      login.sessionToken, first.cancellationRequestId, 'rejected', 'Keputusan berbeda',
+    ])).rejects.toMatchObject({ code: 'CANCELLATION_ALREADY_REVIEWED' })
+  })
+
+  it('allows a new cancellation request after rejection and blocks online cancellation after shipment', async () => {
+    const token = 'demo_customer_token_0000000000000000000000000000000000000000000000000000000000000000'
+    const login = await handleGasMockCall<{ sessionToken: string }>('apiAdminLogin', ['demo-admin', 'demo-browser'])
+    const first = await handleGasMockCall<{ cancellationRequestId: string }>(
+      'apiCustomerRequestOrderCancellation', [token, 'Saya salah memilih jadwal.'],
+    )
+    await handleGasMockCall('apiAdminReviewCancellationRequest', [
+      login.sessionToken, first.cancellationRequestId, 'rejected', 'Order tetap diproses sesuai konfirmasi awal.',
+    ])
+    const portalAfterRejection = await handleGasMockCall<{ order: { canRequestCancellation: boolean; cancellationRequests: Array<{ status: string }> } }>(
+      'apiCustomerGetPortal', [token],
+    )
+    expect(portalAfterRejection.order.canRequestCancellation).toBe(true)
+    expect(portalAfterRejection.order.cancellationRequests[0].status).toBe('rejected')
+
+    const second = await handleGasMockCall<{ cancellationRequestId: string; status: string }>(
+      'apiCustomerRequestOrderCancellation', [token, 'Saya ingin mengajukan ulang dengan alasan baru.'],
+    )
+    expect(second.status).toBe('pending')
+    await handleGasMockCall('apiAdminUpdateShipment', [login.sessionToken, {
+      orderId: 'demo-order-001',
+      courier: 'Kurir Demo',
+      trackingNumber: 'RESI-DEMO-001',
+      status: 'shipped',
+      notes: 'Pesanan demo sudah dikirim.',
+    }])
+    await expect(handleGasMockCall('apiCustomerRequestOrderCancellation', [token, 'Pesanan sudah dikirim, mohon dibantu.']))
+      .rejects.toMatchObject({ code: 'ORDER_NOT_CANCELLABLE' })
+    await expect(handleGasMockCall('apiAdminReviewCancellationRequest', [
+      login.sessionToken, second.cancellationRequestId, 'accepted', 'Review setelah barang dikirim.',
+    ])).rejects.toMatchObject({ code: 'ORDER_REQUIRES_MANUAL_REVIEW' })
+  })
+
   it('reissues and revokes customer access tokens', async () => {
     const login = await handleGasMockCall<{ sessionToken: string }>('apiAdminLogin', ['demo-admin', 'demo-browser'])
     const oldToken = 'demo_customer_token_1111111111111111111111111111111111111111111111111111111111111111'

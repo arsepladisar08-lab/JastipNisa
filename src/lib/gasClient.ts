@@ -194,6 +194,7 @@ export type AdminRequestGroup = {
   customerName: string
   customerPhone: string
   customerAddress: string
+  hasActiveAccessToken: boolean
   verifiedDepositAmount: number
   payments: AdminRequestPayment[]
   items: Array<{
@@ -254,6 +255,22 @@ export function getAdminDashboard(sessionToken: string) {
 
 export function listAdminRequests(sessionToken: string, status = 'all') {
   return gasCall<AdminRequestGroup[]>('apiAdminListRequests', sessionToken, status)
+}
+
+export function reissueCustomerAccessToken(sessionToken: string, requestGroupId: string) {
+  return gasCall<{ accessToken: string; requestCode: string }>(
+    'apiAdminReissueCustomerAccessToken',
+    sessionToken,
+    requestGroupId,
+  )
+}
+
+export function revokeCustomerAccessToken(sessionToken: string, requestGroupId: string) {
+  return gasCall<{ revoked: boolean; alreadyRevoked: boolean }>(
+    'apiAdminRevokeCustomerAccessToken',
+    sessionToken,
+    requestGroupId,
+  )
 }
 
 export function updateAdminRequestItem(

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import {
   addAdminUnit,
+  addAdminPayment,
   adminLogin,
   assignAdminUnit,
   confirmCustomerShopee,
@@ -17,7 +18,9 @@ import {
   respondToRequestItem,
   submitOrderDetails,
   updateAdminRequestItem,
+  uploadAdminPaymentProof,
   uploadAdminRequestPhoto,
+  verifyAdminPayment,
   type AdminDashboard,
   type AdminRequestGroup,
   type CatalogProduct,
@@ -513,6 +516,56 @@ function AdminPage() {
     }
   }
 
+  async function saveDeposit(groupId: string, form: HTMLFormElement) {
+    const values = new FormData(form)
+    const amount = Number(values.get('amount') || 0)
+    const method = String(values.get('method') || 'bank_transfer')
+    const notes = String(values.get('notes') || '')
+    const proof = values.get('proof')
+    if (!Number.isFinite(amount) || amount <= 0 || !(proof instanceof File) || proof.size === 0) {
+      setError('Nominal deposit dan bukti pembayaran wajib diisi.')
+      return
+    }
+    if (proof.size > 700000 || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(proof.type)) {
+      setError('Bukti pembayaran harus JPG, PNG, WebP, atau PDF maksimal 700 KB.')
+      return
+    }
+    setError('')
+    try {
+      const base64 = await fileToBase64(proof)
+      const uploaded = await uploadAdminPaymentProof(sessionToken, {
+        fileName: proof.name,
+        mimeType: proof.type,
+        base64,
+      })
+      await addAdminPayment(sessionToken, {
+        requestGroupId: groupId,
+        type: 'deposit',
+        amount,
+        method,
+        proofFileId: uploaded.fileId,
+        idempotencyKey: window.crypto.randomUUID(),
+        notes,
+      })
+      setNotice('Deposit dicatat. Lanjutkan dengan memeriksa bukti lalu klik verifikasi.')
+      form.reset()
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Deposit belum dapat dicatat.')
+    }
+  }
+
+  async function verifyDeposit(paymentId: string, decision: 'verified' | 'rejected') {
+    setError('')
+    try {
+      await verifyAdminPayment(sessionToken, paymentId, decision)
+      setNotice(decision === 'verified' ? 'Deposit berhasil diverifikasi.' : 'Bukti deposit ditolak.')
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Verifikasi deposit gagal.')
+    }
+  }
+
   async function makeFinalOrder(groupId: string) {
     try {
       const order = await createAdminOrder(sessionToken, groupId)
@@ -540,13 +593,53 @@ function AdminPage() {
       {!loading && groups.length === 0 && <div className="jn-empty"><strong>Belum ada request.</strong><span>Request pelanggan yang masuk akan muncul di sini.</span></div>}
       <div className="jn-admin-list">
         {groups.map((group) => <article className="jn-admin-group" key={group.requestGroupId}>
-          <div className="jn-admin-group-head"><div><span className="jn-eyebrow">{group.requestCode}</span><h3>{group.customerName}</h3><small>{group.customerPhone} · {new Date(group.createdAt).toLocaleString('id-ID')}</small></div><span className="jn-status">{displayStatus(group.status)}</span></div>
+          <div className="jn-admin-group-head"><div><span className="jn-eyebrow">{group.requestCode}</span><h3>{group.customerName}</h3><small>{group.customerPhone} · {group.customerAddress || 'Alamat belum diisi'} · {new Date(group.createdAt).toLocaleString('id-ID')}</small></div><span className="jn-status">{displayStatus(group.status)}</span></div>
+          <RequestPayments group={group} onAddPayment={saveDeposit} onVerifyPayment={verifyDeposit} />
           {group.items.map((item) => <RequestEditor key={item.requestId} item={item} onUpdate={updateItem} onUpload={uploadPhoto} onAddUnit={addAndAssignUnit} />)}
-          {group.status === 'customer_details_received' && <div className="jn-finalize"><p>Data final pelanggan sudah diterima. Pastikan seluruh unit teralokasi dan harga final telah terisi.</p><button className="jn-button jn-button-primary" onClick={() => void makeFinalOrder(group.requestGroupId)}>Buat pesanan final</button></div>}
+          {group.status === 'customer_details_received' && group.verifiedDepositAmount > 0 && <div className="jn-finalize"><p>Deposit terverifikasi {formatRupiah(group.verifiedDepositAmount)}. Pastikan seluruh unit teralokasi dan harga final telah terisi.</p><button className="jn-button jn-button-primary" onClick={() => void makeFinalOrder(group.requestGroupId)}>Buat pesanan final</button></div>}
+          {group.status === 'customer_details_received' && group.verifiedDepositAmount <= 0 && <div className="jn-finalize"><p>Pesanan final belum dapat dibuat. Catat dan verifikasi deposit pelanggan terlebih dahulu. Nominal deposit mengikuti kesepakatan admin dengan pelanggan.</p></div>}
         </article>)}
       </div>
     </section>
   </AppShell>
+}
+
+function RequestPayments({
+  group,
+  onAddPayment,
+  onVerifyPayment,
+}: {
+  group: AdminRequestGroup
+  onAddPayment: (groupId: string, form: HTMLFormElement) => Promise<void>
+  onVerifyPayment: (paymentId: string, decision: 'verified' | 'rejected') => Promise<void>
+}) {
+  return <section className="jn-payment-panel">
+    <div className="jn-payment-heading">
+      <div><strong>Deposit & bukti pembayaran</strong><small>Terverifikasi: {formatRupiah(group.verifiedDepositAmount)}</small></div>
+    </div>
+    {group.payments.length > 0 && <div className="jn-payment-list">
+      {group.payments.map((payment) => <div className="jn-payment-row" key={payment.paymentId}>
+        <div><strong>{formatRupiah(payment.amount)}</strong><small>{payment.method} · {new Date(payment.occurredAt).toLocaleString('id-ID')}</small></div>
+        <span className="jn-status">{displayStatus(payment.verificationStatus)}</span>
+        {payment.verificationStatus === 'awaiting_verification' && <div className="jn-inline-actions">
+          <button type="button" className="jn-button jn-button-primary" onClick={() => void onVerifyPayment(payment.paymentId, 'verified')}>Verifikasi</button>
+          <button type="button" className="jn-button jn-button-outline" onClick={() => void onVerifyPayment(payment.paymentId, 'rejected')}>Tolak bukti</button>
+        </div>}
+      </div>)}
+    </div>}
+    <form className="jn-payment-form" onSubmit={(event) => {
+      event.preventDefault()
+      void onAddPayment(group.requestGroupId, event.currentTarget)
+    }}>
+      <strong>Catat deposit baru</strong>
+      <label className="jn-field">Nominal diterima (Rp)<input name="amount" type="number" min="1" step="1" required placeholder="Nominal sesuai transfer yang diperiksa" /></label>
+      <label className="jn-field">Metode<select name="method"><option value="bank_transfer">Transfer bank</option><option value="e_wallet">E-wallet</option><option value="cash">Tunai</option><option value="other">Lainnya</option></select></label>
+      <label className="jn-field">Bukti transfer<input name="proof" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required /></label>
+      <label className="jn-field">Catatan<input name="notes" maxLength={500} placeholder="Opsional" /></label>
+      <button type="submit" className="jn-button jn-button-outline">Simpan deposit untuk diverifikasi</button>
+      <small>Upload disimpan di Drive privat. Catatan deposit belum dianggap pembayaran terverifikasi sampai admin memeriksa bukti.</small>
+    </form>
+  </section>
 }
 
 function RequestEditor({
@@ -562,6 +655,10 @@ function RequestEditor({
 }) {
   const [status, setStatus] = useState(item.status as 'new' | 'searching' | 'found' | 'not_found')
   const [condition, setCondition] = useState(item.actualCondition)
+  useEffect(() => {
+    setStatus(item.status as 'new' | 'searching' | 'found' | 'not_found')
+    setCondition(item.actualCondition)
+  }, [item.status, item.actualCondition])
   return <div className="jn-admin-item">
     <div className="jn-admin-item-title"><div><strong>{item.productName}</strong><small>{item.variantName || 'Varian bebas'} · {item.quantity} pcs</small></div><span className="jn-status">{displayStatus(item.status)}</span></div>
     <div className="jn-admin-fields">

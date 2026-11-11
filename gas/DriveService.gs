@@ -68,3 +68,28 @@ function uploadPaymentProofAsAdmin_(sessionToken, payload) {
   })
   return { fileId: file.getId(), fileName: file.getName() }
 }
+
+
+function getPaymentProofAsAdmin_(sessionToken, paymentId) {
+  var session = requireAdmin_(sessionToken)
+  var payment = findRecord_('Payments', 'payment_id', paymentId)
+  if (!payment || !payment.proof_file_id) {
+    throw publicError_('PROOF_NOT_FOUND', 'Bukti pembayaran belum tersedia.')
+  }
+  var file = DriveApp.getFileById(String(payment.proof_file_id))
+  var blob = file.getBlob()
+  var bytes = blob.getBytes()
+  if (bytes.length > 700000) {
+    throw publicError_('FILE_TOO_LARGE', 'Bukti pembayaran terlalu besar untuk ditampilkan di dashboard.')
+  }
+  var mimeType = blob.getContentType()
+  if (!/^image\/(jpeg|png|webp)$/.test(mimeType) && mimeType !== 'application/pdf') {
+    throw publicError_('INVALID_FILE', 'Tipe bukti pembayaran tidak didukung.')
+  }
+  appendAudit_('admin', session.role, 'payment_proof_viewed', 'payment', paymentId, {})
+  return {
+    fileName: file.getName(),
+    mimeType: mimeType,
+    base64: Utilities.base64Encode(bytes)
+  }
+}

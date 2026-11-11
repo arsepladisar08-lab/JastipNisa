@@ -9,6 +9,7 @@ import {
 import { initialCatalog, mapCatalogRow, OFFICIAL_CATALOG_URL, type CatalogProduct } from './data/catalog'
 import { calculateJastipFee, formatRupiah } from './lib/fees'
 import { buildWhatsAppUrl, isSupabaseConfigured, supabase } from './lib/supabase'
+import { gasWebAppUrl } from './lib/gasWebApp'
 
 function PublicHeader() {
   const [open, setOpen] = useState(false)
@@ -34,9 +35,15 @@ function PublicHeader() {
               {link.label}
             </NavLink>
           ))}
-          <a href={buildWhatsAppUrl('Halo Admin JastipNisa, saya ingin bertanya tentang jastip Flicka.') || '#kontak'} className="button button-dark nav-cta" onClick={() => setOpen(false)}>
-            Tanya Admin <ArrowUpRight size={15} />
-          </a>
+{gasWebAppUrl ? (
+            <a href={gasWebAppUrl} target="_blank" rel="noopener noreferrer" className="button button-dark nav-cta" onClick={() => setOpen(false)}>
+              Mulai Request <ArrowUpRight size={15} />
+            </a>
+          ) : (
+            <a href={buildWhatsAppUrl('Halo Admin JastipNisa, saya ingin bertanya tentang jastip Flicka.') || '#kontak'} className="button button-dark nav-cta" onClick={() => setOpen(false)}>
+              Tanya Admin <ArrowUpRight size={15} />
+            </a>
+          )}
         </nav>
       </div>
     </header>
@@ -169,7 +176,7 @@ function HomePage() {
             <span className="hero-kicker"><Sparkles size={14} /> YOUR PERSONAL SHOPPING HELPER</span>
             <h1>Tas yang kamu suka, <em>kami bantu carikan.</em></h1>
             <p className="hero-description">Temukan model Flicka dari katalog resmi. Admin bantu cek langsung ke toko, kirim foto unit aktual, lalu kamu putuskan pesananmu.</p>
-            <div className="hero-actions"><Link to="/katalog" className="button button-dark">Jelajahi Katalog <ArrowRight size={16} /></Link><Link to="/cara-kerja" className="button button-light">Lihat cara kerja</Link></div>
+            <div className="hero-actions"><Link to="/katalog" className="button button-dark">Jelajahi Katalog <ArrowRight size={16} /></Link>{gasWebAppUrl && <a href={gasWebAppUrl} target="_blank" rel="noopener noreferrer" className="button button-light">Mulai Request <ArrowUpRight size={16} /></a>}<Link to="/cara-kerja" className="button button-light">Lihat cara kerja</Link></div>
             <div className="hero-trust"><span><BadgeCheck size={16} /> Foto aktual sebelum final order</span><span><ShieldCheck size={16} /> Alur jelas & personal</span></div>
           </div>
           <div className="hero-art">

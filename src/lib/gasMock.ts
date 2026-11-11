@@ -22,6 +22,7 @@ let payments: MockRecord[] = []
 let units: MockRecord[] = []
 let expenses: MockRecord[] = []
 let shipments: MockRecord[] = []
+let cancellationRequests: MockRecord[] = []
 let submissionResults: Record<string, MockRecord> = {}
 let idCounter = 1
 
@@ -85,6 +86,17 @@ function getPortal(group: MockRecord): MockRecord {
             shopeeCheckoutUrl: order.shopeeCheckoutUrl || '',
             trackingNumber: order.trackingNumber || '',
             courier: order.courier || '',
+            canRequestCancellation: ['confirmed', 'packing'].includes(String(order.status)) &&
+              !cancellationRequests.some((item) => item.orderId === order.orderId && ['pending', 'accepted_pending_execution'].includes(item.status)),
+            cancellationRequests: cancellationRequests.filter((item) => item.requestGroupId === group.requestGroupId)
+              .map((item) => ({
+                cancellationRequestId: item.cancellationRequestId,
+                reason: item.reason,
+                status: item.status,
+                reviewNote: item.reviewNote || '',
+                createdAt: item.createdAt,
+                reviewedAt: item.reviewedAt || '',
+              })),
           }
         })()
       : null,
@@ -251,6 +263,7 @@ function resetState(): void {
   ]
   expenses = []
   shipments = []
+  cancellationRequests = []
   submissionResults = {}
   adminPassword = MOCK_ADMIN_PASSWORD
   adminSessions = new Set([MOCK_ADMIN_SESSION])
@@ -335,6 +348,39 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
     }
     case 'apiCustomerGetPortal':
       try { return success(getPortal(findGroupByToken(a[0]))) } catch (error) { return failure((error as any).code || 'ACCESS_DENIED', (error as Error).message) }
+    case 'apiCustomerRequestOrderCancellation': {
+      const group = findGroupByToken(a[0])
+      const order = orders.find((item) => item.orderId === group.orderId && item.requestGroupId === group.requestGroupId)
+      if (!order) return failure('ORDER_NOT_FOUND', 'Belum ada pesanan final demo yang dapat diajukan pembatalannya.')
+      if (!['confirmed', 'packing'].includes(String(order.status))) {
+        return failure('ORDER_NOT_CANCELLABLE', 'Permintaan online demo hanya tersedia sebelum pesanan dikirim.')
+      }
+      const reason = String(a[1] || '').trim()
+      if (reason.length < 8 || reason.length > 1000) return failure('INVALID_CANCELLATION_REASON', 'Alasan pembatalan minimal 8 karakter.')
+      const active = cancellationRequests.find((item) =>
+        item.requestGroupId === group.requestGroupId && item.orderId === order.orderId &&
+        ['pending', 'accepted_pending_execution'].includes(item.status),
+      )
+      if (active) {
+        if (active.status === 'pending' && active.reason === reason) {
+          return success({ cancellationRequestId: active.cancellationRequestId, status: active.status, reused: true })
+        }
+        return failure('CANCELLATION_ALREADY_OPEN', 'Permintaan pembatalan demo masih terbuka.')
+      }
+      const request = {
+        cancellationRequestId: id('demo-cancellation'),
+        requestGroupId: group.requestGroupId,
+        orderId: order.orderId,
+        buyerId: group.buyerId || '',
+        reason,
+        status: 'pending',
+        reviewNote: '',
+        reviewedAt: '',
+        createdAt: now(),
+      }
+      cancellationRequests.push(request)
+      return success({ cancellationRequestId: request.cancellationRequestId, status: request.status, reused: false })
+    }
     case 'apiCustomerGetPhoto': {
       const group = findGroupByToken(a[0])
       const request = requests.find((item) => item.requestId === a[1] && item.requestGroupId === group.requestGroupId)
@@ -594,7 +640,31 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
       return success(orders.map((order) => ({
         ...order,
         payments: payments.filter((payment) => payment.orderId === order.orderId).map((payment) => ({ ...payment })),
+        cancellationRequests: cancellationRequests.filter((item) => item.orderId === order.orderId).map((item) => ({ ...item })),
       })))
+    case 'apiAdminReviewCancellationRequest': {
+      requireAdmin(a[0])
+      const request = cancellationRequests.find((item) => item.cancellationRequestId === a[1])
+      if (!request) return failure('CANCELLATION_NOT_FOUND', 'Permintaan pembatalan demo tidak ditemukan.')
+      const decision = String(a[2] || '')
+      if (!['accepted', 'rejected'].includes(decision)) return failure('INVALID_CANCELLATION_DECISION', 'Keputusan review demo tidak valid.')
+      const reviewNote = String(a[3] || '').trim()
+      if (reviewNote.length < 3 || reviewNote.length > 1000) return failure('CANCELLATION_REVIEW_NOTE_REQUIRED', 'Catatan review demo minimal 3 karakter.')
+      const nextStatus = decision === 'accepted' ? 'accepted_pending_execution' : 'rejected'
+      if (request.status === nextStatus) {
+        return success({ saved: true, status: request.status, reused: true, orderChanged: false, executionDeferred: decision === 'accepted' })
+      }
+      if (request.status !== 'pending') return failure('CANCELLATION_ALREADY_REVIEWED', 'Permintaan pembatalan demo sudah diputuskan.')
+      const order = orders.find((item) => item.orderId === request.orderId)
+      if (!order || !['confirmed', 'packing'].includes(String(order.status))) {
+        return failure('ORDER_REQUIRES_MANUAL_REVIEW', 'Status order demo telah berubah dan perlu ditangani manual.')
+      }
+      request.status = nextStatus
+      request.reviewNote = reviewNote
+      request.reviewedAt = now()
+      request.reviewedBy = String(a[0])
+      return success({ saved: true, status: nextStatus, reused: false, orderChanged: false, executionDeferred: decision === 'accepted' })
+    }
     case 'apiAdminUpdateShipment': {
       requireAdmin(a[0])
       const payload = a[1] || {}

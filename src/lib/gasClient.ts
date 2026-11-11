@@ -249,6 +249,15 @@ export function adminLogin(password: string, clientId: string) {
   return gasCall<{ sessionToken: string; expiresInSeconds: number }>('apiAdminLogin', password, clientId)
 }
 
+export function changeAdminPassword(sessionToken: string, currentPassword: string, newPassword: string) {
+  return gasCall<{ changed: boolean; reauthenticationRequired: boolean }>(
+    'apiAdminChangePassword',
+    sessionToken,
+    currentPassword,
+    newPassword,
+  )
+}
+
 export function getAdminDashboard(sessionToken: string) {
   return gasCall<AdminDashboard>('apiAdminGetDashboard', sessionToken)
 }

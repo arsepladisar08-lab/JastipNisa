@@ -35,3 +35,36 @@ function uploadRequestPhotoAsAdmin_(sessionToken, payload) {
   })
   return { uploaded: true, photoCount: safeJsonParse_(findRecord_('Requests', 'request_id', requestId).actual_photo_file_ids_json, []).length }
 }
+
+
+function uploadPaymentProofAsAdmin_(sessionToken, payload) {
+  var session = requireAdmin_(sessionToken)
+  var fileName = cleanText_(payload && payload.fileName || 'bukti-pembayaran', 120, 'Nama file')
+  var mimeType = String(payload && payload.mimeType || '')
+  var base64 = String(payload && payload.base64 || '')
+  if (!/^image\/(jpeg|png|webp)$/.test(mimeType) && mimeType !== 'application/pdf') {
+    throw publicError_('INVALID_FILE', 'Bukti pembayaran harus JPG, PNG, WebP, atau PDF.')
+  }
+  if (!base64 || base64.length > 950000) {
+    throw publicError_('FILE_TOO_LARGE', 'Ukuran bukti pembayaran melebihi batas unggah.')
+  }
+  var bytes
+  try {
+    bytes = Utilities.base64Decode(base64)
+  } catch (error) {
+    throw publicError_('INVALID_FILE', 'Data bukti pembayaran tidak dapat dibaca.')
+  }
+  if (bytes.length > 700000) {
+    throw publicError_('FILE_TOO_LARGE', 'Ukuran bukti pembayaran maksimal 700 KB.')
+  }
+  var folderId = getScriptProperties_().getProperty('JN_PAYMENT_PROOFS_FOLDER_ID')
+  if (!folderId) throw new Error('Folder bukti pembayaran belum dikonfigurasi.')
+  var safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 90)
+  var file = DriveApp.getFolderById(folderId).createFile(Utilities.newBlob(bytes, mimeType, safeName))
+  file.setDescription('JastipNisa private payment proof; admin-only access.')
+  appendAudit_('admin', session.role, 'payment_proof_uploaded', 'drive_file', file.getId(), {
+    mimeType: mimeType,
+    byteLength: bytes.length
+  })
+  return { fileId: file.getId(), fileName: file.getName() }
+}

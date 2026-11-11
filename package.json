@@ -1,25 +1,29 @@
 {
   "name": "jastipnisa",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "tsc -b && vite build",
+    "build:gas": "npm run typecheck && node scripts/build-gas.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty",
     "lint": "tsc -b --pretty",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "gas:validate": "node scripts/validate-gas.mjs",
+    "gas:push": "clasp push",
+    "gas:deploy": "clasp deploy --description \"JastipNisa React + GAS\""
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.119.0",
     "lucide-react": "^1.71.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
+    "@google/clasp": "^3.4.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",

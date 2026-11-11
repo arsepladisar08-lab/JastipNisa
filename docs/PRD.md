@@ -1,3 +1,5 @@
+> **Catatan pembaruan arsitektur (11 November 2026):** dokumen ini adalah PRD awal v0.1 dan dipertahankan sebagai riwayat kebutuhan awal. Untuk aturan bisnis terbaru gunakan Project Brief JastipNisa v0.2.1. Untuk arsitektur dan urutan implementasi yang berlaku gunakan [Peta Implementasi Terpadu React + Google Apps Script](IMPLEMENTATION_MAP_REACT_GAS.md). Referensi Supabase di bawah merekam keputusan awal dan tidak lagi menjadi target arsitektur.
+
 # JastipNisa — Product Requirements Document
 
 **Version:** 0.1.0  

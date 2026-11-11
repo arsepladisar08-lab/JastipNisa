@@ -1,65 +1,48 @@
-# Google Apps Script Reference — Audit & Migration Map
+# Audit Referensi Google Apps Script
 
-## Sources reviewed
+> Dokumen arsitektur dan peta implementasi terbaru: [IMPLEMENTATION_MAP_REACT_GAS.md](IMPLEMENTATION_MAP_REACT_GAS.md).
 
-- `PROJECT_JASTIPNISA.md` — Project Brief & Rencana MVP, v0.2 draft, 10 November 2026.
-- `Index JastipNisa1.html` — responsive Google Apps Script HTML frontend.
-- `Code JastipNisa1.gs` — Google Apps Script backend; Google Sheets is its data store.
+## Sumber yang diperiksa
 
-These sources are treated as product and workflow references. They are not copied as a parallel production implementation.
+- Project Brief JastipNisa v0.2.1 sebagai referensi kebutuhan dan aturan bisnis.
+- Index JastipNisa1.html sebagai prototipe frontend HTML Service.
+- Code JastipNisa1.gs sebagai prototipe backend Apps Script dengan Google Sheets.
+- jastipnisa_fullstack_webapp.tsx sebagai prototype UI React dan alur pelanggan/admin.
 
-## Architecture decision
+## Keputusan baru
 
-**React + Vite + TypeScript + Supabase remains the single application architecture.** The HTML file depends on `google.script.run` and Apps Script template variables; the backend depends on Apps Script services and a bound Google Spreadsheet. Neither is directly executable in the existing Vite/Vercel application.
+Berbeda dari keputusan awal di dokumen ini, target yang dipilih sekarang adalah **React + Vite + TypeScript + Google Apps Script + Google Sheets + Google Drive**.
 
-The Supabase repository already has a stronger relational foundation for the operational workflow: separate `requests`, `orders`, `order_items`, `units`, `payments`, `shipments` and `expenses`, with admin authorization and PostgreSQL transactions for order creation and payment ledger entries.
+React di-build menjadi satu HTML melalui pipeline build khusus lalu disajikan oleh Apps Script HTML Service. Pemanggilan server menggunakan google.script.run. Google Sheets menyimpan data operasional dan Drive menyimpan file.
 
-## Feature parity map
+Dokumen ini tidak lagi menetapkan Supabase sebagai arsitektur target.
 
-| GAS HTML / Code.gs feature | Existing React + Supabase foundation | Migration decision |
-|---|---|---|
-| Landing page, event hero and public catalog | Public storefront and official catalog reference pages | Keep current React pages; event details should become configurable rather than hard-coded |
-| Fee calculator and fee table | Shared TypeScript fee function and PostgreSQL fee calculation | Keep the current rule as the single business rule: 1 item Rp15.000; 2 items Rp25.000; each item after the second adds Rp10.000 |
-| Customer cart and order creation | Admin request intake, then admin-only final order creation | Do not copy GAS's direct public `createOrder` as a confirmed order; keep request and final order as separate states |
-| Order code + last four digits of phone lookup | No public customer status portal yet | Build a customer access token with high entropy; do not use four phone digits as the access secret |
-| Customer format-order submission | Final order requires admin-entered customer details | Add a customer-facing, token-authorized format form after actual units are found and confirmed |
-| Shopee username confirmation | Admin field and database fulfillment guard | Preserve confirmation requirement; expose a token-authorized customer confirmation step in a later slice |
-| Admin catalog | Admin catalog manager and Supabase catalog tables | Keep; add variant management and import/export later |
-| Physical unit + condition/photo | Admin unit manager and private Storage | Keep; tie unit assignment to order item and derive status through order workflow |
-| Payment ledger, refund and expenses | Admin payment RPC and expenses table | Keep transactional ledger; reports need separate realized revenue, balance, inventory capital and costs |
-| Daftar buru / search list | Request list and item-level order editor | Build a grouped demand queue by model/variant and event; not present as a complete standalone queue yet |
-| Settings / event timing / bank / WhatsApp | WhatsApp number environment variable; no complete settings/event module | Keep secrets private; add an admin-managed event/settings model instead of returning the complete GAS Settings sheet publicly |
+## Yang dipertahankan dari prototipe GAS
 
-## Business rules to preserve
+- Pola HTML Service dan google.script.run.
+- Fee calculator dan fee table.
+- Katalog referensi dan cart/wishlist.
+- Customer status journey dan format order.
+- Shopee username confirmation.
+- Admin dashboard, daftar buru, unit aktual, pembayaran, pengeluaran dan pengiriman.
+- Spreadsheet sebagai sumber data operasional.
 
-- No purchase limit per customer.
-- Fee is calculated per order by the number of physical products, not per person.
-- Products cannot be returned to the store.
-- Official catalog prices and models are reference information, not verified JastipNisa stock.
-- Actual unit photos and condition should be sent before final customer confirmation.
-- Packing/shipping processing estimate remains 2–3 business days, not a courier delivery guarantee.
-- Shopee is an optional path; customer account confirmation is required before fulfillment.
+## Temuan yang harus diperbaiki sebelum code dipakai
 
-Deposit amount, refund/carry-forward treatment for unavailable goods, customer cancellation after photo approval, final complaint handling, shipping carrier/price and settlement deadline remain open business decisions in the brief. They must not be invented as implementation defaults.
+1. Lookup pelanggan saat ini menggunakan kode order pendek dan empat digit nomor telepon. Ganti dengan access token berentropi tinggi; simpan hanya hash token.
+2. Pembuatan order langsung saat pelanggan mengirim cart mencampur request awal dan order final. Pisahkan request group/item request dari order dan item order final.
+3. Update menggunakan nomor baris sheet sebagai identitas. Ganti dengan ID record stabil yang dibuat server.
+4. Status order dan unit dapat diubah bebas. Ganti dengan validasi state transition di service GAS.
+5. Operasi penting seperti pembuatan unit, pembayaran, konversi request dan alokasi unit membutuhkan LockService, validasi relasi, idempotency dan audit.
+6. Data Settings tidak boleh dikembalikan seluruhnya ke client. Public API hanya mengeluarkan field yang diizinkan.
+7. Password placeholder di source Code.gs harus dihapus. Secret disimpan di Script Properties; autentikasi dan pemeriksaan sesi dilakukan server-side.
+8. CacheService hanya cache sementara; jangan dijadikan penyimpanan transaksi atau audit.
+9. File foto dan bukti pembayaran memerlukan kebijakan akses Drive. Jangan mengandalkan URL publik sebagai pengganti otorisasi.
+10. Semua input publik harus divalidasi di GAS. Validasi browser saja tidak cukup.
+11. Dashboard keuangan harus dihitung dari transaksi terverifikasi, HPP unit dan pengeluaran; jangan memakai data sample atau status order saja.
 
-## Security and correctness lessons from the GAS prototype
+## Relasi dengan codebase SOWAN
 
-1. The backend contains a placeholder admin password string. Do not port the password/hash/session design; Supabase Auth + role-based RLS is the target.
-2. Customer status lookup uses a short order code plus the last four phone digits. That is not an adequate standalone secret and the CacheService attempt counter is not a durable abuse-control boundary.
-3. Some HTML dynamic values are interpolated into `innerHTML` and inline handlers without consistent escaping. Rebuild with React text rendering and validated data; do not port raw HTML-string rendering.
-4. Public `pub()` returns the Settings sheet together with catalog data. Public APIs must return an explicit allow-list and never expose bank details, admin-only settings or private operational data.
-5. Spreadsheet row numbers are used as update identifiers. Supabase UUIDs and database constraints are the stable record identity.
-6. Fulfillment statuses must not be set independently of a waybill/delivery record; the admin UI and database now route those transitions through the atomic shipment operation.
-6. Server-side validation is mandatory. Browser form checks do not protect Apps Script functions or database RPCs.
+SOWAN berisi implementasi React + Supabase yang sudah mengandung katalog, admin, request, unit, order, payment, shipment dan expenses. Bagian UI dan domain modelnya dapat membantu sebagai pembanding, tetapi semua akses langsung Supabase perlu dipindahkan ke typed GAS API adapter dan service GAS.
 
-## Implementation slices
-
-1. **Workflow integrity:** protect unit reservations, make fulfillment-derived stock state read-only in the UI, and make shipment/status writes atomic. This is the current branch.
-2. **Customer request intake:** public multi-item wishlist/deposit submission, with explicit rules for what customers may submit; retain admin verification before a final order exists.
-3. **Customer status and approval:** high-entropy access token, private status projection, actual-unit photo review, final address/order format and Shopee username confirmation.
-4. **Operations:** grouped daftar buru, event configuration, searchable inventory, cancellations and stock reassignment audit.
-5. **Finance and release:** realized cash/revenue, outstanding balances, inventory capital, refunds and expense reports; live RLS/storage tests and deployment gate.
-
-## Release boundary
-
-This branch does not create a live customer portal, does not apply migrations to a Supabase project and does not deploy to Vercel. It strengthens the database/application foundation for those next features. A real Supabase project, administrator account and production environment still need explicit configuration and verification.
+Codebase saat ini belum menjadi React + GAS. Detail konversi tiap area, kontrak API, model sheet, keamanan, roadmap, test dan acceptance criteria dijabarkan pada dokumen peta implementasi terpadu.

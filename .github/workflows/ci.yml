@@ -24,5 +24,9 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
-      - name: Production build
+      - name: Standard preview build
         run: npm run build
+      - name: Build React single-file for Apps Script
+        run: npm run build:gas
+      - name: Validate Apps Script bundle and manifest
+        run: npm run gas:validate

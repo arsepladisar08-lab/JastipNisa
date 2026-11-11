@@ -1,67 +1,54 @@
-# JastipNisa — Architecture
+# JastipNisa — Arsitektur Target
 
-## Selected stack
+> Dokumen ringkas ini mengikuti [Peta Implementasi Terpadu React + Google Apps Script](IMPLEMENTATION_MAP_REACT_GAS.md), yang menjadi sumber kebenaran arsitektur dan rencana migrasi.
+
+## Stack
 
 - **Frontend:** React + Vite + TypeScript.
-- **Routing:** React Router.
-- **Backend/data/auth/storage:** Supabase Auth, PostgreSQL, Row Level Security and Supabase Storage.
-- **Hosting:** Vercel static frontend deployment.
-- **Tests:** Vitest for domain logic; browser automation can be added with Playwright.
+- **App runtime:** Google Apps Script Web App + HTML Service.
+- **Client/server bridge:** google.script.run melalui typed Promise adapter.
+- **Data:** Google Sheets.
+- **File storage:** Google Drive.
+- **Source control/deployment:** GitHub + clasp.
+- **Tests:** Vitest untuk domain logic; integration/browser tests pada GAS staging.
 
-The source repository is greenfield/empty. React + Vite + Supabase + Vercel is selected as a low-complexity stack aligned with the linked WebApp-Master-Skill integration profile. Supabase database/RLS is the trusted data boundary; the Vite client is not treated as a privileged backend.
+## Deployment model
 
-## Route boundaries
+React di-build sebagai satu file HTML dengan JavaScript dan CSS inline. Apps Script HTML Service menyajikan file tersebut melalui Web App. React memanggil fungsi server melalui google.script.run. Target awal tidak memakai Vercel sebagai host frontend maupun REST API lintas-domain.
 
-- Public: `/`, `/katalog`, `/cara-kerja`, `/kebijakan`.
-- Private UI: `/admin/login`, `/admin/*`.
-- Admin route absence from public navigation and robots directives reduces discovery but does not secure data.
-- Protected UI verifies Supabase session and role for navigation; PostgreSQL RLS independently enforces data access.
+Gunakan route berbasis hash atau routing satu halaman yang kompatibel dengan HTML Service. Build GAS khusus harus diverifikasi; output Vite default tidak otomatis siap digunakan oleh Apps Script.
+
+## Backend boundaries
+
+Apps Script menjadi batas kepercayaan untuk seluruh operasi data:
+
+- Validasi input, aturan fee, status workflow dan total pembayaran.
+- Autentikasi sesi admin dan token akses pelanggan.
+- CRUD terkontrol atas katalog, varian, request, unit, pembeli, pesanan, pembayaran, pengiriman dan pengeluaran.
+- Operasi LockService untuk mutasi yang rentan race condition.
+- Repository Google Sheets dan layanan file Google Drive.
+
+Hanya fungsi API eksplisit yang boleh dipanggil frontend. Helper internal menggunakan akhiran underscore. Jangan menyediakan fungsi generik untuk membaca sheet atau mengubah baris arbitrer.
 
 ## Data model
 
-- `profiles`: auth user profile and role (`customer` by default; initial admin is promoted manually).
-- `catalog_products`: product model reference sourced from the official Flicka catalog.
-- `catalog_variants`: official color/variant reference, separate from owned units.
-- `units`: physical units acquired by JastipNisa, with actual photos, condition notes and inventory status.
-- `buyers`: private customer identity/contact/address.
-- `requests`: customer requested models/variants, request-stage deposit amount/method/proof/status, and admin matching status.
-- `orders` + `order_items`: confirmed transaction and product lines.
-- `payments`: payment ledger including deposit/payment evidence metadata.
-- `shipments`: courier, tracking and fulfillment data.
-- `expenses`: operational expense ledger.
+Sheet utama: Katalog, Varian, Request, Unit, Pembeli, Pesanan, Item_Pesanan, Pembayaran, Pengeluaran, Rekap dan Pengaturan.
 
-## Access model
+Item_Pesanan adalah tambahan teknis yang direkomendasikan untuk memisahkan wishlist/request awal dari transaksi final dan alokasi unit fisik. Deposit yang tercatat sebelum order final harus dapat ditautkan ke request, lalu dialokasikan ke order tepat satu kali.
 
-- Anonymous users may read only active public catalog products/variants.
-- Anonymous users cannot read buyers, requests, orders, items, units, payments, shipments, expenses or profiles.
-- Admin role is represented in `profiles.role` and cannot be set by a normal client.
-- RLS policies call a narrowly scoped `is_admin()` helper. The helper is security-definer with a fixed search path and only returns a boolean.
-- Admin promotion is a manual trusted SQL operation after the intended admin account is created in Supabase Auth.
-- Service-role keys are never placed in `VITE_*` variables or browser bundles.
+ID dibuat oleh server dan stabil. Nomor baris spreadsheet bukan identifier API.
 
-## Product data policy
+## Security and privacy
 
-The current official source is https://www.flickabags.com/products. Seed data is a point-in-time reference snapshot. Catalog records store `source_url` and `source_checked_at`. Listing a model does not assert JastipNisa has stock. Actual inventory is recorded independently in `units`.
+- Web App dapat berjalan sebagai deployer agar backend mengakses Spreadsheet/Drive dengan otoritas pemilik; semua API publik harus dianggap dapat dipanggil pengunjung.
+- Admin auth divalidasi pada setiap API admin di server. Jangan mengandalkan UI tersembunyi atau email Session sebagai satu-satunya identitas karena email active user dapat tidak tersedia pada web app yang dijalankan sebagai deployer.
+- Customer access memakai token acak berentropi tinggi; hanya hash token yang disimpan.
+- Public API mengembalikan allow-list field. Data pembeli, pembayaran dan bukti transfer tidak boleh menjadi data publik.
+- File Drive bersifat privat secara default. Foto aktual untuk pelanggan harus disajikan hanya setelah token terkait diverifikasi.
+- Validasi, lock, audit trail dan idempotency berada di GAS, bukan hanya di React.
 
-## Payment and order boundaries
+## Kondisi migrasi
 
-No payment gateway is enabled. The public journey instructs the customer to contact admin for deposit/payment details. Admin can record and verify a deposit while the request is still being searched. After the request is marked found, an admin-only PostgreSQL RPC converts it to an order, checks the request deposit, locks the source request, recalculates the fee and atomically stores order items plus the existing deposit entry. The request is marked applied/converted so the same deposit cannot be transferred twice. A separate admin-only payment RPC records settlement, shipping and refund entries while recalculating the payment balance. Deposit amount, refund/carry-forward for unavailable requests, settlement deadline and complaint policy remain open business decisions; the system records actual figures entered by admin and does not infer a policy. Shopee checkout is coordinated manually by admin; the admin records the customer's confirmed Shopee username.
+Repository SOWAN masih memuat implementasi Supabase. Perubahan dokumen ini menetapkan arsitektur target, bukan klaim bahwa source code, data, deployment atau database sudah dimigrasikan. Supabase hanya dihapus setelah parity GAS, pengujian, backup dan cutover selesai.
 
-## Deployment/environment
-
-Browser-safe variables:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY` (or the publishable key provisioned by Supabase)
-
-Optional:
-- `VITE_ADMIN_WHATSAPP` (international digits only, without plus sign)
-- `VITE_OFFICIAL_CATALOG_URL`
-
-Never expose:
-- Supabase service-role/secret key
-- payment credentials
-- private storage credentials
-
-## Known limitations in the initial slice
-
-No automatic catalog sync, payment gateway, customer login, shipping API integration, direct request-to-physical-unit link, advanced reporting or customer self-service order portal is included yet. Private unit-photo and payment-proof upload is implemented using private Storage buckets and expiring signed URLs. Core admin request/deposit verification, unit registration, order creation/conversion, payment/refund ledger, shipment tracking and expense flows exist in the UI and schema but still require a configured Supabase project and live RLS verification.
+Detail diagram, API, data dictionary, status, security, roadmap dan acceptance criteria ada di [IMPLEMENTATION_MAP_REACT_GAS.md](IMPLEMENTATION_MAP_REACT_GAS.md).

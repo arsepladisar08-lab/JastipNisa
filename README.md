@@ -10,6 +10,8 @@ Aplikasi operasional jasa titip produk Flicka dengan frontend React dan backend 
 
 Dokumen utama pengembangan: [Peta Implementasi Terpadu — React + Google Apps Script](docs/IMPLEMENTATION_MAP_REACT_GAS.md). Panduan setup: [GAS_SETUP.md](docs/GAS_SETUP.md).
 
+Pada website publik Vercel, tombol **Mulai Request** mengarah ke React + GAS Web App setelah `VITE_GAS_WEBAPP_URL` dikonfigurasi. Website publik dan aplikasi transaksi tetap berjalan pada origin terpisah; request pelanggan diproses di GAS agar `google.script.run` tetap digunakan secara native. URL deployment GAS adalah konfigurasi publik, bukan tempat menyimpan credential.
+
 ## Target architecture
 
 - **Frontend:** React + Vite + TypeScript.

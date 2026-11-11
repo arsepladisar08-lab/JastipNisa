@@ -294,7 +294,7 @@ function AdminGuard({ children }: { children: ReactNode }) {
     let alive = true
     let verificationId = 0
 
-    async function verify(sessionOverride?: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']) {
+    async function verify(sessionOverride?: { user: { id: string } } | null) {
       const currentVerification = ++verificationId
       let session = sessionOverride
 

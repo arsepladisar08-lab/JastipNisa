@@ -9,8 +9,10 @@ const root = document.getElementById('root')
 if (!root) throw new Error('Root element #root tidak ditemukan.')
 
 const bootstrap = normalizeGasBootstrap(window.__JN_BOOT__)
-if (bootstrap.token) {
-  sessionStorage.setItem('jn.customer.access-token', bootstrap.token)
+if (bootstrap.page === 'portal') {
+  // Do not silently reuse an older portal token when a malformed/empty link is opened.
+  if (bootstrap.token) sessionStorage.setItem('jn.customer.access-token', bootstrap.token)
+  else sessionStorage.removeItem('jn.customer.access-token')
 }
 if (bootstrap.page !== 'home') {
   const route = getGasInitialRoute(bootstrap)

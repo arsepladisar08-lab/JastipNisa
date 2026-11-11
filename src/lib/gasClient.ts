@@ -168,6 +168,7 @@ export type AdminRequestPayment = {
 
 export type AdminRequestGroup = {
   requestGroupId: string
+  orderId: string
   requestCode: string
   status: string
   createdAt: string

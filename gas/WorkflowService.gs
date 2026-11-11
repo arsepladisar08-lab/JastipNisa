@@ -110,9 +110,10 @@ function revokeCustomerAccessTokenAsAdmin_(sessionToken, requestGroupId) {
       return { revoked: true, alreadyRevoked: true }
     }
 
+    var now = isoNow_()
     updateRecord_('Request_Groups', 'request_group_id', groupId, {
-      access_token_revoked_at: isoNow_(),
-      updated_at: isoNow_()
+      access_token_revoked_at: now,
+      updated_at: now
     })
     try {
       appendAudit_('admin', session.role, 'customer_access_token_revoked', 'request_group', groupId, {

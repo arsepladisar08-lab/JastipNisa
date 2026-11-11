@@ -28,6 +28,8 @@ import {
   uploadAdminPaymentProof,
   uploadAdminRequestPhoto,
   verifyAdminPayment,
+  type AdminCatalogProduct,
+  type AdminCatalogVariant,
   type AdminDashboard,
   type AdminOrder,
   type AdminRequestGroup,
@@ -706,6 +708,254 @@ function AdminPage() {
       onSaveShopeeLink={saveShopeeLink}
     />
   </AppShell>
+}
+
+function CatalogManager({
+  sessionToken,
+  onNotice,
+  onError,
+}: {
+  sessionToken: string
+  onNotice: (message: string) => void
+  onError: (message: string) => void
+}) {
+  const [products, setProducts] = useState<AdminCatalogProduct[]>([])
+  const [variants, setVariants] = useState<AdminCatalogVariant[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingProductId, setEditingProductId] = useState('')
+  const [editingVariantId, setEditingVariantId] = useState('')
+  const [productForm, setProductForm] = useState({
+    name: '', slug: '', category: 'Tas', referencePrice: '', officialUrl: 'https://www.flickabags.com/products',
+    imageUrl: '', sourceCheckedAt: new Date().toISOString().slice(0, 10), sortOrder: '0', isActive: true,
+  })
+  const [variantForm, setVariantForm] = useState({ productId: '', name: '', imageUrl: '', isActive: true })
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await listAdminCatalog(sessionToken)
+      setProducts(data.products)
+      setVariants(data.variants)
+      setVariantForm((current) => ({
+        ...current,
+        productId: current.productId || data.products[0]?.productId || '',
+      }))
+    } catch (reason) {
+      onError(reason instanceof Error ? reason.message : 'Katalog admin tidak dapat dimuat.')
+    } finally {
+      setLoading(false)
+    }
+  }, [sessionToken, onError])
+
+  useEffect(() => { void refresh() }, [refresh])
+
+  function resetProduct() {
+    setEditingProductId('')
+    setProductForm({
+      name: '', slug: '', category: 'Tas', referencePrice: '', officialUrl: 'https://www.flickabags.com/products',
+      imageUrl: '', sourceCheckedAt: new Date().toISOString().slice(0, 10), sortOrder: '0', isActive: true,
+    })
+  }
+
+  async function saveProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    onError('')
+    try {
+      await saveAdminCatalogProduct(sessionToken, {
+        productId: editingProductId || undefined,
+        name: productForm.name.trim(),
+        slug: productForm.slug.trim(),
+        category: productForm.category,
+        referencePrice: Number(productForm.referencePrice || 0),
+        officialUrl: productForm.officialUrl.trim(),
+        imageUrl: productForm.imageUrl.trim(),
+        sourceCheckedAt: productForm.sourceCheckedAt,
+        sortOrder: Number(productForm.sortOrder || 0),
+        isActive: productForm.isActive,
+      })
+      onNotice(editingProductId ? 'Produk katalog diperbarui.' : 'Produk katalog ditambahkan.')
+      resetProduct()
+      await refresh()
+    } catch (reason) {
+      onError(reason instanceof Error ? reason.message : 'Produk katalog gagal disimpan.')
+    }
+  }
+
+  async function saveVariant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    onError('')
+    try {
+      await saveAdminVariant(sessionToken, {
+        variantId: editingVariantId || undefined,
+        productId: variantForm.productId,
+        name: variantForm.name.trim(),
+        imageUrl: variantForm.imageUrl.trim(),
+        isActive: variantForm.isActive,
+      })
+      onNotice(editingVariantId ? 'Varian diperbarui.' : 'Varian ditambahkan.')
+      setEditingVariantId('')
+      setVariantForm((current) => ({ ...current, name: '', imageUrl: '', isActive: true }))
+      await refresh()
+    } catch (reason) {
+      onError(reason instanceof Error ? reason.message : 'Varian gagal disimpan.')
+    }
+  }
+
+  function editProduct(product: AdminCatalogProduct) {
+    setEditingProductId(product.productId)
+    setProductForm({
+      name: product.name,
+      slug: product.slug,
+      category: product.category,
+      referencePrice: String(product.referencePrice),
+      officialUrl: product.officialUrl,
+      imageUrl: product.imageUrl,
+      sourceCheckedAt: product.sourceCheckedAt || '',
+      sortOrder: String(product.sortOrder),
+      isActive: product.isActive,
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function editVariant(variant: AdminCatalogVariant) {
+    setEditingVariantId(variant.variantId)
+    setVariantForm({
+      productId: variant.productId,
+      name: variant.name,
+      imageUrl: variant.imageUrl,
+      isActive: variant.isActive,
+    })
+  }
+
+  return <section className="jn-section jn-catalog-manager">
+    <div className="jn-section-heading"><div><span className="jn-eyebrow">REFERENCE CATALOG</span><h2>Kelola katalog & varian</h2><p>Masukkan model katalog yang sudah diperiksa. Data ini bukan stok fisik.</p></div><button type="button" className="jn-button jn-button-outline" onClick={() => void refresh()}>Refresh katalog</button></div>
+    <div className="jn-catalog-admin-grid">
+      <form className="jn-panel jn-catalog-form" onSubmit={saveProduct}>
+        <div><span className="jn-eyebrow">{editingProductId ? 'EDIT PRODUCT' : 'NEW PRODUCT'}</span><h3>{editingProductId ? 'Ubah produk katalog' : 'Tambah produk katalog'}</h3></div>
+        <label className="jn-field">Nama produk<input required maxLength={120} value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
+        <label className="jn-field">Slug<input required maxLength={140} value={productForm.slug} onChange={(event) => setProductForm({ ...productForm, slug: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="nama-produk" /></label>
+        <div className="jn-form-grid">
+          <label className="jn-field">Kategori<input maxLength={80} value={productForm.category} onChange={(event) => setProductForm({ ...productForm, category: event.target.value })} /></label>
+          <label className="jn-field">Harga referensi (Rp)<input type="number" min="0" step="1" value={productForm.referencePrice} onChange={(event) => setProductForm({ ...productForm, referencePrice: event.target.value })} /></label>
+        </div>
+        <label className="jn-field">URL sumber resmi<input type="url" required value={productForm.officialUrl} onChange={(event) => setProductForm({ ...productForm, officialUrl: event.target.value })} /></label>
+        <label className="jn-field">URL gambar katalog<input type="url" value={productForm.imageUrl} onChange={(event) => setProductForm({ ...productForm, imageUrl: event.target.value })} /></label>
+        <div className="jn-form-grid">
+          <label className="jn-field">Terakhir diperiksa<input type="date" required value={productForm.sourceCheckedAt} onChange={(event) => setProductForm({ ...productForm, sourceCheckedAt: event.target.value })} /></label>
+          <label className="jn-field">Urutan tampil<input type="number" value={productForm.sortOrder} onChange={(event) => setProductForm({ ...productForm, sortOrder: event.target.value })} /></label>
+        </div>
+        <label className="jn-checkbox-field"><input type="checkbox" checked={productForm.isActive} onChange={(event) => setProductForm({ ...productForm, isActive: event.target.checked })} /> Tampilkan di katalog publik</label>
+        <div className="jn-inline-actions"><button className="jn-button jn-button-primary">{editingProductId ? 'Simpan perubahan' : 'Tambah produk'}</button>{editingProductId && <button type="button" className="jn-button jn-button-outline" onClick={resetProduct}>Batal edit</button>}</div>
+      </form>
+
+      <div className="jn-panel jn-catalog-form">
+        <div><span className="jn-eyebrow">{editingVariantId ? 'EDIT VARIANT' : 'NEW VARIANT'}</span><h3>{editingVariantId ? 'Ubah varian' : 'Tambah varian / warna'}</h3></div>
+        <form className="jn-form" onSubmit={saveVariant}>
+          <label className="jn-field">Produk induk<select required value={variantForm.productId} onChange={(event) => setVariantForm({ ...variantForm, productId: event.target.value })}><option value="">Pilih produk</option>{products.map((product) => <option key={product.productId} value={product.productId}>{product.name}</option>)}</select></label>
+          <label className="jn-field">Nama varian / warna<input required maxLength={100} value={variantForm.name} onChange={(event) => setVariantForm({ ...variantForm, name: event.target.value })} placeholder="Contoh: Black" /></label>
+          <label className="jn-field">URL gambar varian<input type="url" value={variantForm.imageUrl} onChange={(event) => setVariantForm({ ...variantForm, imageUrl: event.target.value })} /></label>
+          <label className="jn-checkbox-field"><input type="checkbox" checked={variantForm.isActive} onChange={(event) => setVariantForm({ ...variantForm, isActive: event.target.checked })} /> Varian aktif</label>
+          <div className="jn-inline-actions"><button className="jn-button jn-button-primary">{editingVariantId ? 'Simpan varian' : 'Tambah varian'}</button>{editingVariantId && <button type="button" className="jn-button jn-button-outline" onClick={() => { setEditingVariantId(''); setVariantForm({ ...variantForm, name: '', imageUrl: '', isActive: true }) }}>Batal</button>}</div>
+        </form>
+        <div className="jn-variant-list">
+          {variants.map((variant) => <div key={variant.variantId}><span>{products.find((product) => product.productId === variant.productId)?.name || 'Produk'} · {variant.name}</span><button type="button" onClick={() => editVariant(variant)}>Edit</button><small>{variant.isActive ? 'Aktif' : 'Nonaktif'}</small></div>)}
+          {variants.length === 0 && <small>Belum ada varian katalog.</small>}
+        </div>
+      </div>
+    </div>
+    <div className="jn-catalog-list">
+      {loading ? <div className="jn-state">Memuat produk…</div> : products.length === 0 ? <div className="jn-empty"><strong>Katalog masih kosong.</strong><span>Tambahkan model yang sudah diverifikasi dari sumber resmi.</span></div> : products.map((product) => <article className="jn-catalog-row" key={product.productId}>
+        <div><strong>{product.name}</strong><small>{product.category} · Referensi {formatRupiah(product.referencePrice)} · Diperiksa {product.sourceCheckedAt || 'belum diisi'}</small></div>
+        <span className="jn-status">{product.isActive ? 'Tampil publik' : 'Nonaktif'}</span>
+        <button type="button" className="jn-button jn-button-outline" onClick={() => editProduct(product)}>Edit</button>
+      </article>)}
+    </div>
+  </section>
+}
+
+function OrdersManager({
+  orders,
+  onAddPayment,
+  onVerifyPayment,
+  onViewProof,
+  onUpdateShipment,
+  onSaveShopeeLink,
+}: {
+  orders: AdminOrder[]
+  onAddPayment: (orderId: string, form: HTMLFormElement) => Promise<void>
+  onVerifyPayment: (paymentId: string, decision: 'verified' | 'rejected') => Promise<void>
+  onViewProof: (paymentId: string) => Promise<{ fileName: string; mimeType: string; base64: string }>
+  onUpdateShipment: (orderId: string, form: HTMLFormElement) => Promise<void>
+  onSaveShopeeLink: (orderId: string, form: HTMLFormElement) => Promise<void>
+}) {
+  const [proofPreviews, setProofPreviews] = useState<Record<string, { fileName: string; mimeType: string; dataUrl: string }>>({})
+  async function openProof(paymentId: string) {
+    try {
+      const proof = await onViewProof(paymentId)
+      setProofPreviews((current) => ({
+        ...current,
+        [paymentId]: {
+          fileName: proof.fileName,
+          mimeType: proof.mimeType,
+          dataUrl: 'data:' + proof.mimeType + ';base64,' + proof.base64,
+        },
+      }))
+    } catch {
+      // Parent surfaces the server error.
+    }
+  }
+
+  return <section className="jn-section jn-order-manager">
+    <div className="jn-section-heading"><div><span className="jn-eyebrow">FINAL ORDERS</span><h2>Pesanan & pengiriman</h2><p>Catat pelunasan, link checkout Shopee, kurir dan nomor resi.</p></div></div>
+    {orders.length === 0 ? <div className="jn-empty"><strong>Belum ada pesanan final.</strong><span>Order akan muncul setelah pelanggan mengirim format, unit dialokasikan, dan deposit diverifikasi.</span></div> : <div className="jn-orders-grid">
+      {orders.map((order) => <article className="jn-order-card" key={order.orderId}>
+        <div className="jn-order-card-head"><div><span className="jn-eyebrow">{order.orderCode}</span><h3>{order.customerName}</h3><small>{order.customerPhone} · {new Date(order.createdAt).toLocaleString('id-ID')}</small></div><span className="jn-status">{displayStatus(order.status)}</span></div>
+        <div className="jn-order-info"><div><small>Jumlah produk</small><strong>{order.productCount}</strong></div><div><small>Fee jastip</small><strong>{formatRupiah(order.fee)}</strong></div><div><small>Total order</small><strong>{formatRupiah(order.totalAmount)}</strong></div></div>
+        <div className="jn-order-balance"><span>Terbayar {formatRupiah(order.totalPaid)}</span><strong>Sisa {formatRupiah(order.balance)}</strong><small>Status: {displayStatus(order.paymentStatus)}. Ongkir tidak termasuk total ini hingga biaya final ditetapkan.</small></div>
+        <div className="jn-order-payments">
+          <strong>Riwayat pembayaran</strong>
+          {order.payments.map((payment) => <div className="jn-order-payment" key={payment.paymentId}>
+            <div><span>{payment.type === 'shopee' ? 'Shopee' : payment.type === 'refund' ? 'Refund' : 'Pelunasan'} · {formatRupiah(payment.amount)}</span><small>{payment.method} · {displayStatus(payment.verificationStatus)}</small></div>
+            {payment.hasProof && <button type="button" onClick={() => void openProof(payment.paymentId)}>Lihat bukti</button>}
+            {payment.verificationStatus === 'awaiting_verification' && <div className="jn-inline-actions"><button type="button" className="jn-button jn-button-primary" onClick={() => void onVerifyPayment(payment.paymentId, 'verified')}>Verifikasi</button><button type="button" className="jn-button jn-button-outline" onClick={() => void onVerifyPayment(payment.paymentId, 'rejected')}>Tolak</button></div>}
+            {proofPreviews[payment.paymentId] && <div className="jn-payment-proof-preview">
+              {proofPreviews[payment.paymentId].mimeType.startsWith('image/') ? <img src={proofPreviews[payment.paymentId].dataUrl} alt="Bukti pembayaran" /> : <a href={proofPreviews[payment.paymentId].dataUrl} download={proofPreviews[payment.paymentId].fileName}>Unduh PDF</a>}
+            </div>}
+          </div>)}
+        </div>
+        <form className="jn-order-form" onSubmit={(event) => { event.preventDefault(); void onAddPayment(order.orderId, event.currentTarget) }}>
+          <strong>Catat pembayaran baru</strong>
+          <div className="jn-form-grid">
+            <label className="jn-field">Jenis pembayaran<select name="type"><option value="settlement">Pelunasan / transfer</option><option value="shopee">Pembayaran Shopee</option></select></label>
+            <label className="jn-field">Nominal (Rp)<input type="number" name="amount" min="1" required /></label>
+          </div>
+          <div className="jn-form-grid">
+            <label className="jn-field">Metode<select name="method"><option value="bank_transfer">Transfer bank</option><option value="e_wallet">E-wallet</option><option value="cash">Tunai</option><option value="shopee">Shopee</option><option value="other">Lainnya</option></select></label>
+            <label className="jn-field">Bukti pembayaran<input name="proof" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required /></label>
+          </div>
+          <button className="jn-button jn-button-outline">Simpan pembayaran</button>
+        </form>
+        <form className="jn-order-form" onSubmit={(event) => { event.preventDefault(); void onSaveShopeeLink(order.orderId, event.currentTarget) }}>
+          <strong>Link checkout Shopee (opsional)</strong>
+          <label className="jn-field">URL checkout<input type="url" name="shopeeCheckoutUrl" defaultValue={order.shopeeCheckoutUrl} placeholder="https://shopee.co.id/..." /></label>
+          <small>Nama akun pelanggan: {order.shopeeUsername || 'Belum dikonfirmasi'}</small>
+          <button className="jn-button jn-button-outline">Simpan link</button>
+        </form>
+        <form className="jn-order-form" onSubmit={(event) => { event.preventDefault(); void onUpdateShipment(order.orderId, event.currentTarget) }}>
+          <strong>Pengiriman</strong>
+          <div className="jn-form-grid">
+            <label className="jn-field">Kurir<input name="courier" defaultValue={order.courier} placeholder="Kurir" /></label>
+            <label className="jn-field">Nomor resi<input name="trackingNumber" defaultValue={order.trackingNumber} placeholder="Nomor resi" /></label>
+          </div>
+          <div className="jn-form-grid">
+            <label className="jn-field">Status<select name="status" defaultValue={order.shipmentStatus || (order.status === 'shipped' ? 'shipped' : order.status === 'completed' ? 'delivered' : 'preparing')}><option value="preparing">Packing / diproses</option><option value="shipped">Dikirim</option><option value="delivered">Diterima</option><option value="issue">Kendala</option></select></label>
+            <label className="jn-field">Catatan<input name="notes" placeholder="Opsional" /></label>
+          </div>
+          <button className="jn-button jn-button-primary">Simpan pengiriman</button>
+        </form>
+      </article>)}
+    </div>}
+  </section>
 }
 
 function RequestPayments({

@@ -52,8 +52,8 @@ const markup = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '<script></sc
 if (/<script\b[^>]*\bsrc=/i.test(markup)) throw new Error('Apps Script HTML still contains an external script reference.')
 if (/<link\b[^>]*\bstylesheet[^>]*\bhref=/i.test(markup)) throw new Error('Apps Script HTML still contains an external stylesheet reference.')
 if (!html.includes('JastipNisa')) throw new Error('Generated HTML does not contain the JastipNisa app shell.')
-if (!html.includes('google.script') || !html.includes('apiPublicGetCatalog')) {
-  throw new Error('Generated HTML is missing the React-to-Apps-Script client.')
+if (!html.includes('apiPublicGetCatalog') || !html.includes('apiAdminLogin')) {
+  throw new Error('Generated HTML is missing required public/admin API bindings.')
 }
 if (html.includes('VITE_SUPABASE_URL') || html.includes('VITE_SUPABASE_ANON_KEY')) {
   throw new Error('Supabase environment identifiers must not be bundled in the GAS entrypoint.')

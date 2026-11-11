@@ -14,6 +14,7 @@ function saveCatalogProductAsAdmin_(sessionToken, payload) {
   }
 
   return withScriptLock_(function () {
+    session = requireAdmin_(sessionToken)
     var records = readRecords_('Catalog')
     var productId = cleanText_(payload.productId || '', 100, 'ID produk') || newId_()
     var duplicateSlug = records.some(function (row) {
@@ -54,6 +55,7 @@ function saveVariantAsAdmin_(sessionToken, payload) {
   }
 
   return withScriptLock_(function () {
+    session = requireAdmin_(sessionToken)
     if (!findRecord_('Catalog', 'product_id', productId)) {
       throw publicError_('PRODUCT_NOT_FOUND', 'Produk katalog tidak ditemukan.')
     }

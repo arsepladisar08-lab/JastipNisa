@@ -49,6 +49,7 @@ Deposit amount, refund/carry-forward treatment for unavailable goods, customer c
 3. Some HTML dynamic values are interpolated into `innerHTML` and inline handlers without consistent escaping. Rebuild with React text rendering and validated data; do not port raw HTML-string rendering.
 4. Public `pub()` returns the Settings sheet together with catalog data. Public APIs must return an explicit allow-list and never expose bank details, admin-only settings or private operational data.
 5. Spreadsheet row numbers are used as update identifiers. Supabase UUIDs and database constraints are the stable record identity.
+6. Fulfillment statuses must not be set independently of a waybill/delivery record; the admin UI and database now route those transitions through the atomic shipment operation.
 6. Server-side validation is mandatory. Browser form checks do not protect Apps Script functions or database RPCs.
 
 ## Implementation slices

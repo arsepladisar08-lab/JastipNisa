@@ -55,6 +55,18 @@ function createPublicRequest_(payload) {
   })
 
   var tokenHash = hmacHex_(accessToken, getCustomerTokenPepper_())
+  var payloadHash = sha256Hex_(JSON.stringify({
+    customerName: customerName,
+    phoneNormalized: phoneNormalized,
+    items: prepared.map(function (item) {
+      return {
+        productId: item.product_id,
+        variantId: item.variant_id,
+        quantity: item.quantity,
+        notes: item.notes
+      }
+    })
+  }))
   return withScriptLock_(function () {
     var previous = readRecords_('Request_Groups').filter(function (row) {
       return String(row.client_submission_id) === submissionId
@@ -62,6 +74,9 @@ function createPublicRequest_(payload) {
     if (previous) {
       if (!constantTimeEqual_(previous.access_token_hash, tokenHash)) {
         throw publicError_('DUPLICATE_SUBMISSION', 'ID pengajuan sudah digunakan. Buat pengajuan baru.')
+      }
+      if (!previous.payload_hash || !constantTimeEqual_(previous.payload_hash, payloadHash)) {
+        throw publicError_('IDEMPOTENCY_CONFLICT', 'Data pengajuan berbeda dari percobaan sebelumnya. Muat ulang formulir dan buat pengajuan baru sebelum mencoba kembali.')
       }
       return {
         requestGroupId: String(previous.request_group_id),
@@ -97,6 +112,8 @@ function createPublicRequest_(payload) {
       access_token_hash: tokenHash,
       access_token_created_at: now,
       access_token_revoked_at: '',
+      order_id: '',
+      payload_hash: payloadHash,
       created_at: now,
       updated_at: now
     }])

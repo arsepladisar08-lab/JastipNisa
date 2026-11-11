@@ -10,7 +10,7 @@ var JN_TABLE_SCHEMA = {
   Order_Items: ['order_item_id', 'order_id', 'request_id', 'unit_id', 'product_id', 'variant_id', 'product_name_snapshot', 'variant_name_snapshot', 'quantity', 'unit_price', 'status', 'created_at'],
   Payments: ['payment_id', 'request_group_id', 'request_id', 'order_id', 'type', 'amount', 'method', 'proof_file_id', 'verification_status', 'verified_at', 'verified_by', 'idempotency_key', 'occurred_at', 'notes', 'created_at'],
   Shipments: ['shipment_id', 'order_id', 'courier', 'tracking_number', 'status', 'processed_at', 'shipped_at', 'delivered_at', 'notes', 'created_at', 'updated_at'],
-  Expenses: ['expense_id', 'occurred_at', 'category', 'description', 'amount', 'order_id', 'event_id', 'created_by', 'created_at'],
+  Expenses: ['expense_id', 'occurred_at', 'category', 'description', 'amount', 'order_id', 'event_id', 'created_by', 'created_at', 'idempotency_key'],
   Events: ['event_id', 'name', 'event_date', 'location', 'status', 'notes', 'created_at', 'updated_at'],
   Audit_Log: ['audit_id', 'actor_type', 'actor_id', 'action', 'entity_type', 'entity_id', 'details_json', 'created_at']
 }

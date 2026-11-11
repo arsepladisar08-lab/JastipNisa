@@ -66,6 +66,7 @@ const adminMutations = [
   'updateShipmentAsAdmin_',
   'addExpenseAsAdmin_',
   'updateOrderOptionsAsAdmin_',
+  'getPaymentProofAsAdmin_',
   'saveCatalogProductAsAdmin_',
   'saveVariantAsAdmin_',
 ]

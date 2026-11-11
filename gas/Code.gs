@@ -164,9 +164,9 @@ function apiCustomerConfirmShopee(accessToken, username) {
   })
 }
 
-function apiAdminLogin(password) {
+function apiAdminLogin(password, clientId) {
   return safeApi_(function () {
-    return adminLogin_(password)
+    return adminLogin_(password, clientId)
   })
 }
 

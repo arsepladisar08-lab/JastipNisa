@@ -79,13 +79,13 @@ Setelah setupJastipNisa_ berhasil:
 5. Fungsi menghasilkan salt + HMAC SHA-256 hash dan menghapus property password awal.
 6. Simpan passphrase di password manager. Jangan menuliskannya di README, source, issue, atau log.
 
-Sesi admin berada di CacheService selama 30 menit dan dapat berakhir lebih cepat bila cache dihapus. Jika cache hilang, login kembali. Setelah delapan percobaan gagal, login ditahan 15 menit.
+Sesi admin berada di CacheService selama 30 menit dan dapat berakhir lebih cepat bila cache dihapus. Jika cache hilang, login kembali. Setelah delapan percobaan gagal dari browser key yang sama, login dari browser tersebut ditahan 15 menit. Ini best-effort friction, bukan perlindungan brute-force tingkat jaringan: Apps Script Web App publik tidak memberikan client IP tepercaya ke aplikasi ini, sehingga deployment publik tetap perlu dipantau dan kredensial admin harus unik serta kuat.
 
 ## 6. Isi katalog awal
 
 Sheet Catalog dan Variants dibuat kosong. Ini disengaja: harga/ketersediaan snapshot lama tidak boleh diperlakukan sebagai harga atau stok terkini.
 
-Masukkan produk setelah memeriksa sumber resmi. Simpan URL resmi, harga referensi, tanggal pemeriksaan, dan status aktif. Jangan memasukkan stok fisik ke Catalog; unit aktual dicatat di sheet Units.
+Workspace admin pada entry React GAS menyediakan pengelolaan Catalog dan Variants. Masukkan model setelah memeriksa sumber resmi; simpan URL resmi, harga referensi, tanggal pemeriksaan, dan status aktif. Jangan memasukkan stok fisik ke Catalog; unit aktual dicatat di sheet Units. Seed produk sengaja tidak disertakan karena snapshot lama belum tentu merupakan referensi harga/varian terkini.
 
 ## 7. Deployment Web App
 

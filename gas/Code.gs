@@ -275,3 +275,46 @@ function apiAdminAddExpense(sessionToken, payload) {
     return addExpenseAsAdmin_(sessionToken, payload)
   })
 }
+
+function apiAdminVerifyPayment(sessionToken, paymentId, decision) {
+  return safeApi_(function () {
+    return verifyPaymentAsAdmin_(sessionToken, paymentId, decision)
+  })
+}
+
+function apiAdminAddPayment(sessionToken, payload) {
+  return safeApi_(function () {
+    return addPaymentAsAdmin_(sessionToken, payload)
+  })
+}
+
+function apiAdminSaveCatalogProduct(sessionToken, payload) {
+  return safeApi_(function () {
+    return saveCatalogProductAsAdmin_(sessionToken, payload)
+  })
+}
+
+function apiAdminSaveVariant(sessionToken, payload) {
+  return safeApi_(function () {
+    return saveVariantAsAdmin_(sessionToken, payload)
+  })
+}
+
+function apiAdminListUnits(sessionToken) {
+  return safeApi_(function () {
+    requireAdmin_(sessionToken)
+    return readRecords_('Units').map(function (row) {
+      return {
+        unitId: String(row.unit_id),
+        unitCode: String(row.unit_code),
+        productId: String(row.product_id),
+        variantId: String(row.variant_id || ''),
+        status: String(row.status),
+        sellingPrice: Number(row.selling_price || 0),
+        conditionNotes: String(row.condition_notes || ''),
+        heldRequestId: String(row.held_request_id || ''),
+        reservedOrderId: String(row.reserved_order_id || '')
+      }
+    })
+  })
+}

@@ -193,3 +193,16 @@ function makeRequestCode_() {
   var suffix = Utilities.getUuid().replace(/-/g, '').substring(0, 6).toUpperCase()
   return 'JN-' + stamp + '-' + suffix
 }
+
+
+function sha256Hex_(value) {
+  var bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(value),
+    Utilities.Charset.UTF_8
+  )
+  return bytes.map(function (byte) {
+    var unsigned = (byte + 256) % 256
+    return ('0' + unsigned.toString(16)).slice(-2)
+  }).join('')
+}

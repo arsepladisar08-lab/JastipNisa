@@ -107,7 +107,7 @@ async function compressImage(file: File): Promise<File> {
 
     const initialScale = Math.min(1, MAX_IMAGE_DIMENSION / longestSide)
     const canvas = document.createElement('canvas')
-    const baseName = file.name.replace(/\\.[^.]+$/, '') || 'foto-aktual'
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'foto-aktual'
 
     for (const scale of IMAGE_SCALE_STEPS) {
       const width = Math.max(1, Math.round(decoded.width * initialScale * scale))

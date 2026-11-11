@@ -110,6 +110,7 @@ function apiCustomerGetPortal(accessToken) {
         orderCode: String(order.order_code),
         status: String(order.status),
         totalAmount: Number(order.total_amount || 0),
+        paymentStatus: String(order.payment_status || 'unpaid'),
         shopeeCheckoutUrl: String(order.shopee_checkout_url || ''),
         trackingNumber: String(order.tracking_number || ''),
         courier: String(order.courier || '')

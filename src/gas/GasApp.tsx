@@ -45,6 +45,8 @@ import {
   type CatalogVariant,
   type CustomerPortal,
 } from '../lib/gasClient'
+import { buildGasUrl, gasWebAppUrl } from '../lib/gasWebApp'
+import { normalizeGasBootstrap } from '../lib/gasBootstrap'
 import {
   isImageUploadMimeType,
   isSupportedUploadMimeType,

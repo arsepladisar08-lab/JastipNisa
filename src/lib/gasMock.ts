@@ -22,6 +22,7 @@ let payments: MockRecord[] = []
 let units: MockRecord[] = []
 let expenses: MockRecord[] = []
 let shipments: MockRecord[] = []
+let submissionResults: Record<string, MockRecord> = {}
 let idCounter = 1
 
 function id(prefix: string): string {
@@ -50,6 +51,9 @@ function requireAdmin(token: unknown): void {
 }
 
 function findGroupByToken(token: unknown): MockRecord {
+  if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{40,160}$/.test(token)) {
+    fail('INVALID_ACCESS_TOKEN', 'Format token demo tidak valid.')
+  }
   const group = groups.find((item) => item.token === token && !item.revokedAt)
   if (!group) fail('ACCESS_DENIED', 'Token demo tidak ditemukan atau sudah dicabut.')
   return group
@@ -247,6 +251,7 @@ function resetState(): void {
   ]
   expenses = []
   shipments = []
+  submissionResults = {}
   adminPassword = MOCK_ADMIN_PASSWORD
   adminSessions = new Set([MOCK_ADMIN_SESSION])
   idCounter = 1
@@ -281,6 +286,20 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
       if (items.length === 0) return failure('INVALID_ITEMS', 'Tambahkan minimal satu produk.')
       const token = String(payload.accessToken || createToken())
       if (!/^[A-Za-z0-9_-]{40,160}$/.test(token)) return failure('INVALID_REQUEST', 'Token demo tidak valid.')
+      const submissionId = String(payload.submissionId || '')
+      const duplicate = submissionResults[submissionId]
+      if (submissionId && duplicate) {
+        return success({ ...duplicate, reusedSubmission: true })
+      }
+      const preparedItems = items.map((item: MockRecord) => {
+        const product = products.find((row) => row.productId === item.productId && row.isActive)
+        const variant = product && item.variantId
+          ? variants.find((row) => row.variantId === item.variantId && row.productId === product.productId)
+          : undefined
+        return { item, product, variant, quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)) }
+      })
+      if (preparedItems.some((entry) => !entry.product)) return failure('PRODUCT_NOT_AVAILABLE', 'Produk contoh tidak tersedia.')
+      if (preparedItems.some((entry) => entry.item.variantId && !entry.variant)) return failure('VARIANT_NOT_AVAILABLE', 'Varian produk demo tidak tersedia.')
       const groupId = id('demo-group')
       const requestCode = 'JN-DEMO-' + String(idCounter).padStart(3, '0')
       const group = {
@@ -291,11 +310,7 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
       }
       groups.unshift(group)
       let productCount = 0
-      items.forEach((item: MockRecord) => {
-        const product = products.find((row) => row.productId === item.productId && row.isActive)
-        if (!product) return
-        const variant = variants.find((row) => row.variantId === item.variantId && row.productId === product.productId)
-        const quantity = Math.max(1, Math.floor(Number(item.quantity) || 1))
+      preparedItems.forEach(({ item, product, variant, quantity }) => {
         productCount += quantity
         requests.push({
           requestId: id('demo-request'), requestGroupId: groupId,
@@ -305,11 +320,12 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
           photoCount: 0, assignedUnitCount: 0,
         })
       })
-      if (!productCount) return failure('PRODUCT_NOT_AVAILABLE', 'Produk contoh tidak tersedia.')
-      return success({
+      const result = {
         requestGroupId: groupId, requestCode, accessToken: token, productCount,
         estimatedJastipFee: calculateJastipFee(productCount), reusedSubmission: false,
-      })
+      }
+      if (submissionId) submissionResults[submissionId] = result
+      return success(result)
     }
     case 'apiCustomerGetPortal':
       try { return success(getPortal(findGroupByToken(a[0]))) } catch (error) { return failure((error as any).code || 'ACCESS_DENIED', (error as Error).message) }

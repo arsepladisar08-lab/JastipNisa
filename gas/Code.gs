@@ -45,6 +45,8 @@ function apiHealth() {
 }
 
 function safeApi_(callback) {
+  // Bound the read snapshot to one API invocation, including read-only calls.
+  resetDatabaseExecutionCache_()
   try {
     return { ok: true, data: callback(), error: null }
   } catch (error) {
@@ -54,6 +56,8 @@ function safeApi_(callback) {
       : 'Permintaan belum dapat diproses. Periksa data atau coba kembali.'
     console.error('JastipNisa API error [' + code + ']: ' + String(error && error.message || error))
     return { ok: false, data: null, error: { code: code, message: message } }
+  } finally {
+    resetDatabaseExecutionCache_()
   }
 }
 

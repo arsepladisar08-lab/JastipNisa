@@ -9,6 +9,7 @@ import {
   createAdminOrder,
   createRequest,
   getAdminDashboard,
+  getAdminPaymentProof,
   getCustomerPhoto,
   getCustomerPortal,
   getPublicCatalog,
@@ -555,6 +556,16 @@ function AdminPage() {
     }
   }
 
+  async function viewPaymentProof(paymentId: string) {
+    setError('')
+    try {
+      return await getAdminPaymentProof(sessionToken, paymentId)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Bukti pembayaran tidak dapat dibuka.')
+      throw reason
+    }
+  }
+
   async function verifyDeposit(paymentId: string, decision: 'verified' | 'rejected') {
     setError('')
     try {
@@ -594,7 +605,7 @@ function AdminPage() {
       <div className="jn-admin-list">
         {groups.map((group) => <article className="jn-admin-group" key={group.requestGroupId}>
           <div className="jn-admin-group-head"><div><span className="jn-eyebrow">{group.requestCode}</span><h3>{group.customerName}</h3><small>{group.customerPhone} · {group.customerAddress || 'Alamat belum diisi'} · {new Date(group.createdAt).toLocaleString('id-ID')}</small></div><span className="jn-status">{displayStatus(group.status)}</span></div>
-          <RequestPayments group={group} onAddPayment={saveDeposit} onVerifyPayment={verifyDeposit} />
+          <RequestPayments group={group} onAddPayment={saveDeposit} onVerifyPayment={verifyDeposit} onViewProof={viewPaymentProof} />
           {group.items.map((item) => <RequestEditor key={item.requestId} item={item} onUpdate={updateItem} onUpload={uploadPhoto} onAddUnit={addAndAssignUnit} />)}
           {group.status === 'customer_details_received' && group.verifiedDepositAmount > 0 && <div className="jn-finalize"><p>Deposit terverifikasi {formatRupiah(group.verifiedDepositAmount)}. Pastikan seluruh unit teralokasi dan harga final telah terisi.</p><button className="jn-button jn-button-primary" onClick={() => void makeFinalOrder(group.requestGroupId)}>Buat pesanan final</button></div>}
           {group.status === 'customer_details_received' && group.verifiedDepositAmount <= 0 && <div className="jn-finalize"><p>Pesanan final belum dapat dibuat. Catat dan verifikasi deposit pelanggan terlebih dahulu. Nominal deposit mengikuti kesepakatan admin dengan pelanggan.</p></div>}
@@ -608,11 +619,29 @@ function RequestPayments({
   group,
   onAddPayment,
   onVerifyPayment,
+  onViewProof,
 }: {
   group: AdminRequestGroup
   onAddPayment: (groupId: string, form: HTMLFormElement) => Promise<void>
   onVerifyPayment: (paymentId: string, decision: 'verified' | 'rejected') => Promise<void>
+  onViewProof: (paymentId: string) => Promise<{ fileName: string; mimeType: string; base64: string }>
 }) {
+  const [proofPreviews, setProofPreviews] = useState<Record<string, { fileName: string; mimeType: string; dataUrl: string }>>({})
+  async function openProof(paymentId: string) {
+    try {
+      const proof = await onViewProof(paymentId)
+      setProofPreviews((current) => ({
+        ...current,
+        [paymentId]: {
+          fileName: proof.fileName,
+          mimeType: proof.mimeType,
+          dataUrl: 'data:' + proof.mimeType + ';base64,' + proof.base64,
+        },
+      }))
+    } catch {
+      // Parent surfaces the server error.
+    }
+  }
   return <section className="jn-payment-panel">
     <div className="jn-payment-heading">
       <div><strong>Deposit & bukti pembayaran</strong><small>Terverifikasi: {formatRupiah(group.verifiedDepositAmount)}</small></div>
@@ -621,6 +650,12 @@ function RequestPayments({
       {group.payments.map((payment) => <div className="jn-payment-row" key={payment.paymentId}>
         <div><strong>{formatRupiah(payment.amount)}</strong><small>{payment.method} · {new Date(payment.occurredAt).toLocaleString('id-ID')}</small></div>
         <span className="jn-status">{displayStatus(payment.verificationStatus)}</span>
+        {payment.hasProof && <button type="button" className="jn-text-link" onClick={() => void openProof(payment.paymentId)}>Lihat bukti</button>}
+        {proofPreviews[payment.paymentId] && <div className="jn-payment-proof-preview">
+          {proofPreviews[payment.paymentId].mimeType.startsWith('image/')
+            ? <img src={proofPreviews[payment.paymentId].dataUrl} alt={'Bukti pembayaran ' + proofPreviews[payment.paymentId].fileName} />
+            : <a href={proofPreviews[payment.paymentId].dataUrl} download={proofPreviews[payment.paymentId].fileName}>Unduh bukti PDF</a>}
+        </div>}
         {payment.verificationStatus === 'awaiting_verification' && <div className="jn-inline-actions">
           <button type="button" className="jn-button jn-button-primary" onClick={() => void onVerifyPayment(payment.paymentId, 'verified')}>Verifikasi</button>
           <button type="button" className="jn-button jn-button-outline" onClick={() => void onVerifyPayment(payment.paymentId, 'rejected')}>Tolak bukti</button>

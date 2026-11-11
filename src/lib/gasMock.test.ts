@@ -55,6 +55,25 @@ describe('GAS in-memory demo backend', () => {
     expect(created.estimatedJastipFee).toBe(125000)
   })
 
+  it('reuses a retried customer submission instead of creating a duplicate group', async () => {
+    const catalog = await handleGasMockCall<{ products: Array<{ productId: string }> }>('apiPublicGetCatalog')
+    const payload = {
+      customerName: 'Pemesan Demo',
+      phone: '081234567890',
+      submissionId: 'demo-retry-submission-000001',
+      accessToken: 'demo_retry_token_000000000000000000000000000000000000000000000000',
+      items: [{ productId: catalog.products[0].productId, quantity: 1 }],
+    }
+    const first = await handleGasMockCall<{ requestGroupId: string; reusedSubmission: boolean }>('apiPublicCreateRequest', [payload])
+    const retry = await handleGasMockCall<{ requestGroupId: string; reusedSubmission: boolean }>('apiPublicCreateRequest', [payload])
+    const login = await handleGasMockCall<{ sessionToken: string }>('apiAdminLogin', ['demo-admin', 'demo-browser'])
+    const requests = await handleGasMockCall<Array<{ requestCode: string }>>('apiAdminListRequests', [login.sessionToken, 'all'])
+
+    expect(retry.requestGroupId).toBe(first.requestGroupId)
+    expect(retry.reusedSubmission).toBe(true)
+    expect(requests).toHaveLength(3)
+  })
+
   it('reissues and revokes customer access tokens', async () => {
     const login = await handleGasMockCall<{ sessionToken: string }>('apiAdminLogin', ['demo-admin', 'demo-browser'])
     const oldToken = 'demo_customer_token_1111111111111111111111111111111111111111111111111111111111111111'

@@ -749,10 +749,10 @@ function AdminPage() {
       setError('Bukti pembayaran harus berupa JPG, PNG, WebP, atau PDF.')
       return
     }
-    const idempotencyKey = getFormIdempotencyKey(form, { requestGroupId: groupId, type: 'deposit', amount, method, notes })
+    const proofSignature = [proof.name, proof.size, proof.lastModified].join(':')
+    const idempotencyKey = getFormIdempotencyKey(form, { requestGroupId: groupId, type: 'deposit', amount, method, notes, proofSignature })
     const proofIdField = getHiddenFormField(form, '_jn_uploaded_proof_id')
     const proofSignatureField = getHiddenFormField(form, '_jn_proof_signature')
-    const proofSignature = [proof.name, proof.size, proof.lastModified].join(':')
     if (proofSignatureField.value && proofSignatureField.value !== proofSignature) proofIdField.value = ''
     proofSignatureField.value = proofSignature
     setError('')
@@ -832,10 +832,10 @@ function AdminPage() {
       setError('Tipe pembayaran tidak didukung.')
       return
     }
-    const idempotencyKey = getFormIdempotencyKey(form, { orderId, type, amount, method, notes })
+    const proofSignature = [proof.name, proof.size, proof.lastModified].join(':')
+    const idempotencyKey = getFormIdempotencyKey(form, { orderId, type, amount, method, notes, proofSignature })
     const proofIdField = getHiddenFormField(form, '_jn_uploaded_proof_id')
     const proofSignatureField = getHiddenFormField(form, '_jn_proof_signature')
-    const proofSignature = [proof.name, proof.size, proof.lastModified].join(':')
     if (proofSignatureField.value && proofSignatureField.value !== proofSignature) proofIdField.value = ''
     proofSignatureField.value = proofSignature
     try {

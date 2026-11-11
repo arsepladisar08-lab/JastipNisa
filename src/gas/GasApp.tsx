@@ -100,6 +100,7 @@ function displayStatus(status: string) {
 function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="jn-app">
+      {isGasMockEnabled() && <div className="jn-demo-banner" role="status">MODE DEMO — data tidak tersimpan dan hanya berada di browser ini.</div>}
       <header className="jn-header">
         <Link to="/" className="jn-brand"><span className="jn-brand-mark">JN</span><span>JastipNisa<small>Personal shopping assistant</small></span></Link>
         <nav>
@@ -126,7 +127,7 @@ function HomePage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [created, setCreated] = useState<{ code: string; token: string } | null>(null)
+  const [created, setCreated] = useState<{ code: string; token: string; portalUrl: string | null } | null>(null)
   const [submissionAttempt, setSubmissionAttempt] = useState<{ submissionId: string; accessToken: string } | null>(null)
 
   useEffect(() => {
@@ -185,7 +186,9 @@ function HomePage() {
         })),
       })
       sessionStorage.setItem(ACCESS_TOKEN_KEY, result.accessToken)
-      setCreated({ code: result.requestCode, token: result.accessToken })
+      const deploymentUrl = normalizeGasBootstrap(window.__JN_BOOT__).webAppUrl || gasWebAppUrl
+      const portalUrl = buildGasUrl(deploymentUrl, { page: 'portal', token: result.accessToken })
+      setCreated({ code: result.requestCode, token: result.accessToken, portalUrl })
       setSubmissionAttempt(null)
       setCart([])
     } catch (reason) {
@@ -277,8 +280,11 @@ function HomePage() {
           <span className="jn-eyebrow">REQUEST TERCATAT</span><h3>{created.code}</h3>
           <p>Simpan token berikut. Token ini adalah kunci untuk membuka status request kamu dan tidak akan ditampilkan lagi setelah sesi browser berakhir.</p>
           <code>{created.token}</code>
-          <button type="button" className="jn-button jn-button-outline" onClick={() => void navigator.clipboard?.writeText(created.token)}>Salin token akses</button>
-          <Link className="jn-button jn-button-primary" to="/portal">Lihat status request</Link>
+          {created.portalUrl
+            ? <button type="button" className="jn-button jn-button-primary" onClick={() => void navigator.clipboard?.writeText(created.portalUrl || '')}>Salin tautan portal pelanggan</button>
+            : <p className="jn-muted">Tautan siap pakai tersedia setelah URL Web App GAS dikonfigurasi. Untuk preview lokal, token demo tetap dapat digunakan di halaman portal.</p>}
+          <button type="button" className="jn-button jn-button-outline" onClick={() => void navigator.clipboard?.writeText(created.token)}>Salin token cadangan</button>
+          <Link className="jn-button jn-button-quiet" to="/portal">Lihat status request di aplikasi ini</Link>
         </div>}
       </section>
     </AppShell>
@@ -469,7 +475,7 @@ function AdminPage() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
   const [passwordBusy, setPasswordBusy] = useState(false)
-  const [issuedTokens, setIssuedTokens] = useState<Record<string, string>>({})
+  const [issuedTokens, setIssuedTokens] = useState<Record<string, { token: string; portalUrl: string | null }>>({})
   const [tokenActionGroup, setTokenActionGroup] = useState('')
 
   const refresh = useCallback(async (token: string) => {
@@ -539,7 +545,9 @@ function AdminPage() {
     setTokenActionGroup(groupId)
     try {
       const result = await reissueCustomerAccessToken(sessionToken, groupId)
-      setIssuedTokens((current) => ({ ...current, [groupId]: result.accessToken }))
+      const deploymentUrl = normalizeGasBootstrap(window.__JN_BOOT__).webAppUrl || gasWebAppUrl
+      const portalUrl = buildGasUrl(deploymentUrl, { page: 'portal', token: result.accessToken })
+      setIssuedTokens((current) => ({ ...current, [groupId]: { token: result.accessToken, portalUrl } }))
       setNotice('Token baru untuk ' + result.requestCode + ' berhasil diterbitkan. Token lama langsung tidak berlaku; salin dan kirim token baru melalui kanal privat.')
       await refresh(sessionToken)
     } catch (reason) {
@@ -570,15 +578,18 @@ function AdminPage() {
   }
 
   async function copyCustomerToken(groupId: string) {
-    const token = issuedTokens[groupId]
-    if (!token) return
+    const access = issuedTokens[groupId]
+    if (!access) return
+    const valueToCopy = access.portalUrl || access.token
     if (!navigator.clipboard?.writeText) {
-      setNotice('Clipboard tidak tersedia. Salin token yang ditampilkan secara manual.')
+      setNotice('Clipboard tidak tersedia. Salin tautan atau token yang ditampilkan secara manual.')
       return
     }
     try {
-      await navigator.clipboard.writeText(token)
-      setNotice('Token akses berhasil disalin. Kirim kepada pelanggan melalui kanal privat.')
+      await navigator.clipboard.writeText(valueToCopy)
+      setNotice(access.portalUrl
+        ? 'Tautan portal berhasil disalin. Kirim kepada pelanggan melalui kanal privat.'
+        : 'Token akses berhasil disalin. Konfigurasikan URL GAS untuk membuat tautan portal siap pakai.')
     } catch {
       setNotice('Token belum dapat disalin otomatis. Salin token yang ditampilkan secara manual.')
     }
@@ -834,14 +845,16 @@ function AdminPage() {
               <p>Terbitkan ulang token ketika pelanggan kehilangan akses. Token lama otomatis tidak berlaku setelah token baru diterbitkan.</p>
               {issuedTokens[group.requestGroupId] && <div className="jn-issued-token">
                 <small>Token baru untuk {group.requestCode} — kirim secara privat</small>
-                <code>{issuedTokens[group.requestGroupId]}</code>
+                {issuedTokens[group.requestGroupId].portalUrl
+                  ? <a href={issuedTokens[group.requestGroupId].portalUrl || undefined} target="_blank" rel="noreferrer">Buka tautan portal pelanggan</a>
+                  : <code>{issuedTokens[group.requestGroupId].token}</code>}
               </div>}
             </div>
             <div className="jn-inline-actions">
               <button type="button" className="jn-button jn-button-outline" disabled={tokenActionGroup === group.requestGroupId} onClick={() => void reissueCustomerToken(group.requestGroupId)}>
                 {tokenActionGroup === group.requestGroupId ? 'Memproses…' : 'Terbitkan ulang token'}
               </button>
-              {issuedTokens[group.requestGroupId] && <button type="button" className="jn-button jn-button-primary" onClick={() => void copyCustomerToken(group.requestGroupId)}>Salin token</button>}
+              {issuedTokens[group.requestGroupId] && <button type="button" className="jn-button jn-button-primary" onClick={() => void copyCustomerToken(group.requestGroupId)}>{issuedTokens[group.requestGroupId].portalUrl ? 'Salin tautan portal' : 'Salin token'}</button>}
               {group.hasActiveAccessToken && <button type="button" className="jn-button jn-button-outline" disabled={tokenActionGroup === group.requestGroupId} onClick={() => void revokeCustomerToken(group.requestGroupId)}>Cabut akses</button>}
             </div>
           </div>

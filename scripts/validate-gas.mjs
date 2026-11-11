@@ -67,6 +67,7 @@ const adminMutations = [
   'addExpenseAsAdmin_',
   'updateOrderOptionsAsAdmin_',
   'getPaymentProofAsAdmin_',
+  'uploadPaymentProofAsAdmin_',
   'saveCatalogProductAsAdmin_',
   'saveVariantAsAdmin_',
 ]
@@ -82,6 +83,15 @@ const photoUploadBody = getServerFunctionSource('uploadRequestPhotoAsAdmin_')
 if (!photoUploadBody.includes('session = requireAdmin_(sessionToken)') ||
     !photoUploadBody.includes('file.setTrashed(true)')) {
   throw new Error('Request-photo upload must revalidate admin session and clean up stale Drive files.')
+}
+
+const customerDetailsBody = getServerFunctionSource('submitCustomerOrderDetails_')
+const customerShopeeBody = getServerFunctionSource('confirmCustomerShopee_')
+for (const [name, body] of [['submitCustomerOrderDetails_', customerDetailsBody], ['confirmCustomerShopee_', customerShopeeBody]]) {
+  const lock = body.indexOf('withScriptLock_(function () {')
+  if (lock < 0 || !body.slice(lock).includes('findRequestGroupByToken_(accessToken)')) {
+    throw new Error('Customer mutation must revalidate its bearer token inside LockService: ' + name)
+  }
 }
 
 const customerDecisionBody = getServerFunctionSource('customerRespondToItem_')

@@ -3,7 +3,7 @@ var JN_TABLE_SCHEMA = {
   Catalog: ['product_id', 'name', 'slug', 'category', 'official_price', 'official_url', 'image_url', 'source_checked_at', 'is_active', 'sort_order', 'created_at', 'updated_at'],
   Variants: ['variant_id', 'product_id', 'name', 'image_url', 'is_active', 'created_at', 'updated_at'],
   Buyers: ['buyer_id', 'name', 'phone', 'phone_normalized', 'address', 'shopee_username', 'notes', 'created_at', 'updated_at'],
-  Request_Groups: ['request_group_id', 'request_code', 'client_submission_id', 'buyer_id', 'status', 'access_token_hash', 'access_token_created_at', 'access_token_revoked_at', 'created_at', 'updated_at'],
+  Request_Groups: ['request_group_id', 'request_code', 'client_submission_id', 'buyer_id', 'status', 'access_token_hash', 'access_token_created_at', 'access_token_revoked_at', 'order_id', 'created_at', 'updated_at'],
   Requests: ['request_id', 'request_group_id', 'product_id', 'variant_id', 'product_name_snapshot', 'variant_name_snapshot', 'quantity', 'notes', 'status', 'actual_photo_file_ids_json', 'actual_condition', 'customer_decision', 'unit_ids_json', 'created_at', 'updated_at'],
   Units: ['unit_id', 'unit_code', 'product_id', 'variant_id', 'actual_photo_file_ids_json', 'condition_notes', 'receipt_reference', 'purchase_price', 'selling_price', 'status', 'held_request_id', 'reserved_order_id', 'created_at', 'updated_at'],
   Orders: ['order_id', 'order_code', 'request_group_id', 'buyer_id', 'customer_name', 'customer_phone', 'shipping_address', 'shopee_username', 'shopee_checkout_url', 'product_count', 'product_subtotal', 'jastip_fee', 'shipping_fee', 'discount', 'total_amount', 'status', 'payment_status', 'courier', 'tracking_number', 'shipped_at', 'delivered_at', 'created_at', 'updated_at'],

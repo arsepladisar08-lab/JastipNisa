@@ -316,6 +316,7 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
       groups.unshift(group)
       let productCount = 0
       preparedItems.forEach(({ item, product, variant, quantity }) => {
+        if (!product) fail('PRODUCT_NOT_AVAILABLE', 'Produk contoh tidak tersedia.')
         productCount += quantity
         requests.push({
           requestId: id('demo-request'), requestGroupId: groupId,

@@ -100,18 +100,24 @@ Dokumen ini adalah ringkasan operasional untuk menjaga kesinambungan sesi pengem
 - Lazy-load foto jika dibutuhkan.
 - WhatsApp link/template dari setting admin (nomor kosong harus menghasilkan state yang jelas, bukan link mati).
 
-### P4 — Workflow order
+### P4 — Workflow order (implemented on branch, pending PR/CI)
 
-- Selesaikan pembatalan hanya setelah state machine, shipment, unit release, payment ledger dan refund decision dirumuskan.
-- Tidak ada refund otomatis tanpa kebijakan eksplisit.
-- Order shipped/completed tidak boleh dibatalkan melalui jalur yang sama.
+- Customer cancellation is a separate `Cancellation_Requests` register, not an automatic order state change.
+- The customer portal accepts an online request only while the order is `confirmed` or `packing`; a reason of at least 8 characters is required.
+- The admin must record a decision and a review note. Accepted requests move to `accepted_pending_execution`; rejected requests move to `rejected`.
+- Acceptance is **not** execution: it does not change the order status, release reserved stock, insert a refund, or rewrite payment records.
+- A pending/accepted request blocks a duplicate open request. Rejected requests may be resubmitted.
+- Shipped/delivered/completed or otherwise changed orders are routed to manual handling; this workflow does not attempt an automatic refund or post-shipment cancellation.
+- The new sheet is added by `JN_TABLE_SCHEMA`. On a dedicated GAS staging spreadsheet, run the existing idempotent `setupJastipNisa_` once to create the missing sheet before integration testing. No production spreadsheet or deployment was changed.
 
-### P5 — Performance & cleanup
+### P5 — Performance & cleanup (implemented on branch, pending PR/CI)
 
-- Ukur latency dan ukuran sheet terlebih dahulu.
-- Tambahkan cache/index hanya dengan invalidasi yang teruji.
-- Pecah komponen besar secara bertahap tanpa perubahan perilaku.
-- Tambahkan test kontrak API, accessibility, dan concurrency.
+- `readRecords_` reuses a shallow-cloned table snapshot within a single `safeApi_` invocation; each API call and each `withScriptLock_` transaction starts/ends with a cleared snapshot. Writes invalidate only the affected table.
+- `updateRecordsById_` batches ID-keyed patches into contiguous row groups, avoiding one read/write cycle per record for inventory, shipment, and order recovery work.
+- Admin request/order/finance aggregation now builds lookup maps once rather than filtering entire related tables inside each parent-row loop.
+- `getDatabaseExecutionMetrics_` exposes per-execution data range reads, writes, cache hits and batch groups to tests only; metrics are not public API or persisted.
+- CI validator uses an in-memory Spreadsheet stub to assert one cached repeat read, one grouped write for two adjacent ID updates, write invalidation, and end-of-lock cache reset.
+- This is a deterministic operation-count check, not a live latency benchmark. Measure real GAS execution duration and Spreadsheet size on a dedicated staging database before deciding whether longer-lived cache/indexes are justified.
 
 ## Aturan kerja setiap perubahan
 

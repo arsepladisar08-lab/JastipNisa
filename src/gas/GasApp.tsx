@@ -45,6 +45,7 @@ import {
 
 const ACCESS_TOKEN_KEY = 'jn.customer.access-token'
 const ADMIN_SESSION_KEY = 'jn.admin.session-token'
+const ADMIN_LOGIN_CLIENT_KEY = 'jn.admin.login-client'
 
 function formatRupiah(value: number) {
   return new Intl.NumberFormat('id-ID', {
@@ -411,7 +412,12 @@ function AdminLoginPage() {
     setBusy(true)
     setError('')
     try {
-      const result = await adminLogin(password)
+      let clientId = sessionStorage.getItem(ADMIN_LOGIN_CLIENT_KEY)
+      if (!clientId) {
+        clientId = createSecureToken()
+        sessionStorage.setItem(ADMIN_LOGIN_CLIENT_KEY, clientId)
+      }
+      const result = await adminLogin(password, clientId)
       sessionStorage.setItem(ADMIN_SESSION_KEY, result.sessionToken)
       navigate('/admin', { replace: true })
     } catch (reason) {

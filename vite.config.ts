@@ -91,7 +91,6 @@ export default defineConfig(({ mode }) => {
             output: {
               format: 'iife',
               name: 'JastipNisaBundle',
-              inlineDynamicImports: true,
             },
           },
         }

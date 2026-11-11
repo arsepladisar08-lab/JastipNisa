@@ -48,6 +48,7 @@ import {
 } from '../lib/gasClient'
 import { buildGasUrl, gasWebAppUrl } from '../lib/gasWebApp'
 import { normalizeGasBootstrap } from '../lib/gasBootstrap'
+import { buildWhatsAppHref } from '../lib/whatsapp'
 import {
   isImageUploadMimeType,
   isSupportedUploadMimeType,
@@ -77,14 +78,6 @@ function createSecureToken() {
   const bytes = new Uint8Array(32)
   window.crypto.getRandomValues(bytes)
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-}
-
-function buildWhatsAppHref(phone: string | undefined, message: string): string {
-  let number = String(phone || '').replace(/\D/g, '')
-  if (number.startsWith('0')) number = '62' + number.slice(1)
-  else if (number.startsWith('8')) number = '62' + number
-  if (number.length < 9 || number.length > 15) return ''
-  return 'https://wa.me/' + number + '?text=' + encodeURIComponent(message)
 }
 
 function displayStatus(status: string) {

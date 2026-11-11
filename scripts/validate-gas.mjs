@@ -43,6 +43,9 @@ const serverSource = serverFiles.map((path) =>
   '\n// ---- ' + path + ' ----\n' + readFileSync(resolve(root, path), 'utf8'),
 ).join('\n')
 new Script(serverSource, { filename: 'JastipNisaAppsScriptBundle.gs' })
+if (!serverSource.includes('function doGet(e)') || !serverSource.includes('window.__JN_BOOT__')) {
+  throw new Error('GAS server is missing validated deep-link bootstrap handling.')
+}
 
 const htmlPath = resolve(root, 'gas/Index.html')
 const html = readFileSync(htmlPath, 'utf8')
@@ -57,6 +60,11 @@ if (!html.includes('apiPublicGetCatalog') || !html.includes('apiAdminLogin')) {
 }
 if (html.includes('VITE_SUPABASE_URL') || html.includes('VITE_SUPABASE_ANON_KEY')) {
   throw new Error('Supabase environment identifiers must not be bundled in the GAS entrypoint.')
+}
+for (const mockMarker of ['handleGasMockCall', 'MOCK_CUSTOMER_TOKEN_1', 'MOCK_ADMIN_PASSWORD', 'MOCK_METHOD_NOT_IMPLEMENTED']) {
+  if (html.includes(mockMarker)) {
+    throw new Error('Development mock code must not be bundled in the production GAS entrypoint: ' + mockMarker)
+  }
 }
 
 const bytes = statSync(htmlPath).size

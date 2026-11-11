@@ -223,10 +223,17 @@ returns trigger
 language plpgsql
 security definer
 set search_path = public
-as $$
+as $
+declare
+  v_should_assign boolean := false;
 begin
-  if new.unit_id is not null
-     and (tg_op = 'INSERT' or old.unit_id is null) then
+  if tg_op = 'INSERT' then
+    v_should_assign := true;
+  elsif old.unit_id is null then
+    v_should_assign := true;
+  end if;
+
+  if new.unit_id is not null and v_should_assign then
     update public.units
     set reserved_order_id = new.order_id,
         status = 'reserved'
@@ -241,7 +248,7 @@ begin
 
   return new;
 end;
-$$;
+$;
 
 drop trigger if exists guard_order_item_unit_link on public.order_items;
 create trigger guard_order_item_unit_link

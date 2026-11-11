@@ -244,8 +244,8 @@ export function submitOrderDetails(token: string, payload: { name: string; phone
   return gasCall<{ saved: boolean; status: string }>('apiCustomerSubmitOrderDetails', token, payload)
 }
 
-export function adminLogin(password: string) {
-  return gasCall<{ sessionToken: string; expiresInSeconds: number }>('apiAdminLogin', password)
+export function adminLogin(password: string, clientId: string) {
+  return gasCall<{ sessionToken: string; expiresInSeconds: number }>('apiAdminLogin', password, clientId)
 }
 
 export function getAdminDashboard(sessionToken: string) {

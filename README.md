@@ -1,60 +1,55 @@
 # JastipNisa
 
-Public-first jastip storefront and private admin workspace.
+Aplikasi operasional jasa titip produk Flicka dengan frontend React dan backend Google Apps Script.
 
-## Project status
+## Status arsitektur
 
-Foundation and admin operations are implemented: public storefront/catalog, Supabase Auth role gate, request/deposit verification, physical-unit tracking, final order creation, payment ledger, shipment tracking and operating expenses. The public customer request/status portal and direct customer-to-request workflow are still pending. Do not treat the app as production-ready until a real Supabase project has the migrations applied and the RLS/storage access matrix has been tested.
+**Target stack:** React + Vite + TypeScript + Google Apps Script + Google Sheets + Google Drive.
 
-## Planned stack
+**Penting:** branch SOWAN saat ini masih berisi implementasi React + Supabase. Branch arsitektur baru terlebih dahulu menetapkan peta migrasi; source code runtime belum seluruhnya dipindahkan ke GAS. Jangan deploy branch dokumentasi ini sebagai aplikasi GAS produksi.
 
-- React + Vite + TypeScript
-- Supabase Auth, PostgreSQL and Storage
-- Vercel hosting
-- Vitest for unit tests; Playwright for browser journeys when configured
+Dokumen utama pengembangan: [Peta Implementasi Terpadu — React + Google Apps Script](docs/IMPLEMENTATION_MAP_REACT_GAS.md).
 
-## Routes
+## Target architecture
 
-- `/` public landing page
-- `/katalog` public Flicka reference catalog
-- `/cara-kerja` public ordering process
-- `/kebijakan` public policies
-- `/admin/login` private admin sign-in (not linked publicly)
-- `/admin/*` protected admin workspace
+- **Frontend:** React + Vite + TypeScript.
+- **App runtime:** Google Apps Script Web App + HTML Service.
+- **Bridge:** google.script.run, dengan typed Promise adapter.
+- **Database:** Google Sheets.
+- **File storage:** Google Drive.
+- **Source control:** GitHub; Apps Script source dikelola melalui clasp.
+- **Testing:** Vitest untuk domain logic; integration dan browser journey diuji pada deployment GAS staging.
 
-## Business rules
+React akan di-build menjadi satu file HTML yang disajikan melalui Apps Script HTML Service. Pola ini memungkinkan React menggunakan google.script.run secara native dan menghindari ketergantungan pada panggilan cross-origin langsung dari Vercel ke Apps Script.
 
-- Public product display is based on the official Flicka catalog: https://www.flickabags.com/products
-- Official catalog models/variants are references; they do not represent JastipNisa's verified physical stock.
-- Admin must confirm availability and send actual unit photos before customer finalizes order details.
-- Jastip fee per order: 1 product Rp15,000; 2 products Rp25,000; 3+ products Rp25,000 + Rp10,000 for each product beyond 2.
-- No per-customer purchase limit is imposed by JastipNisa.
-- Store return is unavailable; disclose product/event condition and handling policy before payment.
-- After admin packing, shipping processing estimate is 2–3 business days.
-- Shopee checkout is an optional path: admin provides checkout link and customer must confirm their Shopee username after checkout.
-- Deposit/payment is an initial step. Deposit amount, shortfall/top-up, and unavailable-item refund/carry-forward policy remain configurable/open decisions and must not be invented in code.
+## Aturan bisnis inti
 
-## Local development
+- Katalog Flicka adalah referensi produk; bukan jaminan stok fisik.
+- Admin harus mengonfirmasi ketersediaan dan mengirim foto aktual/kondisi sebelum pelanggan menyelesaikan format order.
+- Fee per order: 1 produk Rp15.000; 2 produk Rp25.000; setiap produk setelah kedua menambah Rp10.000.
+- Tidak ada batas jumlah pembelian per pelanggan dari sisi JastipNisa.
+- Produk tidak dapat diretur ke toko. Kebijakan komplain JastipNisa perlu dibedakan dan ditetapkan tersendiri.
+- Estimasi packing dan proses pengiriman adalah 2–3 hari kerja, bukan jaminan waktu tiba.
+- Shopee adalah jalur opsional; pelanggan wajib mengonfirmasi nama akun Shopee setelah checkout.
+- Deposit, pelunasan, barang tidak tersedia, penolakan foto, ongkir, dan kebijakan komplain yang belum diputuskan tidak boleh di-hard-code.
 
-1. Install Node.js 20+.
-2. Copy `.env.example` to `.env.local` and fill in Supabase project URL and anon/publishable key.
-3. Run `npm install`.
-4. Apply `supabase/migrations/202611110001_initial_schema.sql` in a development Supabase project.
-5. Run `supabase/seed.sql` to load the 12 official catalog reference models.
-6. Create the intended admin account in Supabase Auth, then promote its profile using the commented bootstrap SQL at the bottom of the migration.
-7. Run `npm run dev`.
+## Referensi utama
 
-Before building: `npm run typecheck`, `npm test`, and `npm run build`.
+- [Peta implementasi terpadu dan kontrak backend](docs/IMPLEMENTATION_MAP_REACT_GAS.md)
+- [Arsitektur target](docs/ARCHITECTURE.md)
+- [Roadmap implementasi](docs/IMPLEMENTATION.md)
+- [Audit referensi GAS](docs/GAS_REFERENCE_MIGRATION.md)
+- [PRD awal — historis](docs/PRD.md)
 
-Set `VITE_ADMIN_WHATSAPP` to the admin's WhatsApp number in international digits (for example 62... without plus sign).
+## Kondisi development saat ini
 
-No privileged service-role key belongs in browser environment variables.
+Source code di branch SOWAN masih memakai Supabase. Untuk saat ini perintah npm yang ada masih memeriksa baseline tersebut:
 
-## Docs
+1. npm install
+2. npm run typecheck
+3. npm test
+4. npm run build
 
-- [Supabase setup & first-admin guide](docs/SUPABASE_SETUP.md)
+Konfigurasi Spreadsheet, Drive, Apps Script deployment, clasp, dan build single-file GAS akan ditambahkan pada fase migrasi. Jangan menggunakan panduan Supabase lama untuk arsitektur target; lihat catatan deprekasi di docs/SUPABASE_SETUP.md.
 
-- [PRD](docs/PRD.md)
-- [Design](docs/DESIGN.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Implementation plan](docs/IMPLEMENTATION.md)
+Tidak ada database Supabase production, Spreadsheet production, atau deployment GAS yang dikonfigurasi melalui perubahan dokumentasi ini. Periksa dan backup data aktual sebelum cutover.

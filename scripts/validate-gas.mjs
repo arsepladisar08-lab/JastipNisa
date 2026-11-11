@@ -3,6 +3,17 @@ import { resolve } from 'node:path'
 import { Script, createContext } from 'node:vm'
 
 const root = process.cwd()
+const packageJson = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
+const gasPushCommand = String(packageJson.scripts?.['gas:push'] || '')
+const gasDeployCommand = String(packageJson.scripts?.['gas:deploy'] || '')
+if (!/npm run build:gas/.test(gasPushCommand) ||
+    !/npm run gas:validate/.test(gasPushCommand) ||
+    !/clasp push/.test(gasPushCommand)) {
+  throw new Error('gas:push must build the GAS HTML, validate the bundle, and only then run clasp push.')
+}
+if (!/npm run gas:push/.test(gasDeployCommand) || !/clasp deploy/.test(gasDeployCommand)) {
+  throw new Error('gas:deploy must call the safe gas:push workflow before creating a deployment.')
+}
 const required = [
   'gas/appsscript.json',
   'gas/Code.gs',

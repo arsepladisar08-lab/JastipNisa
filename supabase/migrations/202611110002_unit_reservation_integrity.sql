@@ -496,3 +496,47 @@ $$;
 
 revoke all on function public.record_order_shipment(uuid, text, text, text, text) from public;
 grant execute on function public.record_order_shipment(uuid, text, text, text, text) to authenticated;
+
+-- Direct order updates cannot bypass the shipment record. Fulfillment states are
+-- written only after the matching shipment state and tracking timestamp exist.
+create or replace function public.guard_order_fulfillment_has_shipment()
+returns trigger
+language plpgsql
+set search_path = public
+as $
+begin
+  if new.status = old.status then
+    return new;
+  end if;
+
+  if new.status = 'shipped' and not exists (
+    select 1
+    from public.shipments s
+    where s.order_id = new.id
+      and s.status = 'shipped'
+      and s.shipped_at is not null
+      and nullif(trim(s.tracking_number), '') is not null
+  ) then
+    raise exception 'Record courier, tracking number and shipment date before marking the order as shipped.'
+      using errcode = '22023';
+  end if;
+
+  if new.status = 'completed' and not exists (
+    select 1
+    from public.shipments s
+    where s.order_id = new.id
+      and s.status = 'delivered'
+      and s.shipped_at is not null
+  ) then
+    raise exception 'Record delivery confirmation before marking the order as completed.'
+      using errcode = '22023';
+  end if;
+
+  return new;
+end;
+$;
+
+drop trigger if exists guard_order_fulfillment_has_shipment on public.orders;
+create trigger guard_order_fulfillment_has_shipment
+  before update of status on public.orders
+  for each row execute function public.guard_order_fulfillment_has_shipment();

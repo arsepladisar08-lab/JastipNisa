@@ -170,7 +170,7 @@ function apiCustomerGetPhoto(accessToken, requestId, photoIndex) {
         throw publicError_('FILE_TOO_LARGE', 'Foto terlalu besar untuk ditampilkan. Minta admin mengunggah versi yang lebih kecil.')
       }
       var mimeType = blob.getContentType()
-      if (!/^image\\/(jpeg|png|webp)$/.test(mimeType)) {
+      if (!/^image\/(jpeg|png|webp)$/.test(mimeType)) {
         throw publicError_('INVALID_FILE', 'Format foto tidak didukung.')
       }
       return { mimeType: mimeType, base64: Utilities.base64Encode(bytes) }

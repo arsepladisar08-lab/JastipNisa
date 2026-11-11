@@ -65,14 +65,25 @@ function sessionCacheKey_(token) {
   return 'jn_admin_' + hmacHex_(token, getAuthPepper_())
 }
 
+function getAdminAuthVersion_() {
+  var version = Number(getScriptProperties_().getProperty('JN_ADMIN_AUTH_VERSION') || 1)
+  return Number.isSafeInteger(version) && version > 0 ? version : 1
+}
+
 function requireAdmin_(sessionToken) {
   var cache = CacheService.getScriptCache()
   var cacheKey = sessionCacheKey_(sessionToken)
-  var session = cache.get(cacheKey)
-  if (!session) {
+  var cachedSession = cache.get(cacheKey)
+  if (!cachedSession) {
     throw publicError_('ADMIN_SESSION_EXPIRED', 'Sesi admin berakhir. Silakan login kembali.')
   }
-  return safeJsonParse_(session, { role: 'admin' })
+
+  var session = safeJsonParse_(cachedSession, null)
+  if (!session || Number(session.authVersion || 1) !== getAdminAuthVersion_()) {
+    cache.remove(cacheKey)
+    throw publicError_('ADMIN_SESSION_REVOKED', 'Sesi admin sudah dinonaktifkan. Silakan login kembali.')
+  }
+  return session
 }
 
 function adminLogin_(password, clientId) {
@@ -118,7 +129,8 @@ function adminLogin_(password, clientId) {
   var nowIso = isoNow_()
   cache.put(cacheKey, JSON.stringify({
     role: 'admin',
-    createdAt: nowIso
+    createdAt: nowIso,
+    authVersion: getAdminAuthVersion_()
   }), 1800)
 
   appendAudit_('admin', 'primary', 'login_success', 'session', '', {})
@@ -131,4 +143,63 @@ function adminLogout_(sessionToken) {
   CacheService.getScriptCache().remove(cacheKey)
   appendAudit_('admin', 'primary', 'logout', 'session', '', {})
   return { signedOut: true }
+}
+
+function changeAdminPassword_(sessionToken, currentPassword, newPassword) {
+  requireAdmin_(sessionToken)
+
+  var currentInput = String(currentPassword || '')
+  var nextInput = String(newPassword || '')
+  if (currentInput.length < 1 || currentInput.length > 256) {
+    throw publicError_('CURRENT_PASSWORD_INVALID', 'Password saat ini tidak sesuai.')
+  }
+  if (nextInput.length < 16 || nextInput.length > 256) {
+    throw publicError_('WEAK_PASSWORD', 'Password baru harus terdiri dari 16–256 karakter.')
+  }
+  if (currentInput === nextInput) {
+    throw publicError_('PASSWORD_UNCHANGED', 'Password baru harus berbeda dari password saat ini.')
+  }
+
+  return withScriptLock_(function () {
+    // Re-check the session while holding the lock so two concurrent rotations
+    // cannot both succeed using the same administrator session.
+    requireAdmin_(sessionToken)
+
+    var properties = getScriptProperties_()
+    var pepper = getAuthPepper_()
+    var expectedHash = properties.getProperty('JN_ADMIN_PASSWORD_HASH')
+    var currentSalt = properties.getProperty('JN_ADMIN_PASSWORD_SALT')
+    if (!expectedHash || !currentSalt) {
+      throw publicError_('ADMIN_NOT_CONFIGURED', 'Akun admin belum disiapkan oleh pemilik aplikasi.')
+    }
+
+    var currentHash = hmacHex_(currentSalt + ':' + currentInput, pepper)
+    if (!constantTimeEqual_(currentHash, expectedHash)) {
+      throw publicError_('CURRENT_PASSWORD_INVALID', 'Password saat ini tidak sesuai.')
+    }
+
+    var nextSalt = Utilities.getUuid() + Utilities.getUuid()
+    var nextHash = hmacHex_(nextSalt + ':' + nextInput, pepper)
+    var nextVersion = getAdminAuthVersion_() + 1
+
+    properties.setProperties({
+      JN_ADMIN_PASSWORD_SALT: nextSalt,
+      JN_ADMIN_PASSWORD_HASH: nextHash,
+      JN_ADMIN_AUTH_VERSION: String(nextVersion)
+    }, false)
+
+    // The auth version invalidates every session, including sessions in other
+    // browsers. Remove the current session immediately as an extra safeguard.
+    CacheService.getScriptCache().remove(sessionCacheKey_(sessionToken))
+
+    try {
+      appendAudit_('admin', 'primary', 'admin_password_rotated', 'credential', 'primary', {
+        authVersion: nextVersion
+      })
+    } catch (error) {
+      console.error('JastipNisa password rotation audit write failed: ' + String(error && error.message || error))
+    }
+
+    return { changed: true, reauthenticationRequired: true }
+  })
 }

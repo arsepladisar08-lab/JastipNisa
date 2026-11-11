@@ -53,6 +53,7 @@ Dokumen ini adalah ringkasan operasional untuk menjaga kesinambungan sesi pengem
 - Pembayaran dan pengeluaran menyimpan fingerprint payload untuk mendeteksi idempotency key yang dipakai ulang dengan data berbeda; retry identik dipakai ulang, konflik ditolak.
 - Verifikasi pembayaran menerima retry keputusan yang sama dan menolak keputusan terminal yang berlawanan.
 - Foto pelanggan dan bukti pembayaran admin dibaca dengan pemeriksaan token/sesi yang diserialkan; upload foto revalidasi status request dan membersihkan file Drive sementara jika request berubah.
+- Form pembayaran/pengeluaran mempertahankan idempotency key lintas retry di form yang sama; pembayaran juga mempertahankan Drive proof ID yang telah diunggah agar retry tidak mengunggah ulang file yang sama. Kunci diganti bila payload atau file bukti berubah.
 
 **P3 — Customer experience**
 - Foto aktual tidak lagi diunduh semua saat portal dibuka. Pelanggan menekan **Lihat foto aktual** untuk memuat foto item terkait.

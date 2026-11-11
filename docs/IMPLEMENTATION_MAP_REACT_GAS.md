@@ -639,15 +639,15 @@ TSX memberi referensi pengalaman pengguna yang perlu dipecah ke komponen React y
 | Laporan | Kas terverifikasi, pembayaran Shopee terpisah, fee, HPP, biaya, laba sementara, piutang dan deposit belum dialokasikan |
 | Pengaturan | Fee, rekening/instruksi pembayaran, WhatsApp, event aktif dan template pesan |
 
-### 11.3 Temuan TSX yang wajib diperbaiki saat implementasi
+### 11.3 Temuan TSX dan keputusan implementasi GAS
 
-- State katalog, order dan pengeluaran hanya state React/hardcoded; refresh akan menghilangkan perubahan. Semua data harus dihubungkan ke GAS.
+- State katalog, order dan pengeluaran yang semula hardcoded telah diganti dengan API GAS pada entry khusus `src/gas`; jangan gunakan state mock TSX sebagai data produksi.
 - Data order contoh mencakup nama, nomor HP, alamat dan bukti contoh; hapus semua fixture tersebut dari build produksi.
-- Admin PIN demo 1126/nisa bukan autentikasi.
-- Pencarian pelanggan dengan order ID/nomor HP tidak boleh menjadi kontrol akses.
-- Dropdown status admin harus diganti dengan aksi yang hanya mengizinkan transisi valid.
-- Metrik laba di prototype tidak boleh dianggap sebagai laporan transaksi riil. Laporan harus berasal dari ledger pembayaran terverifikasi, unit/HPP dan pengeluaran.
-- Field foto aktual di UI prototype belum konsisten tersambung antara input admin dan preview pelanggan; desain ulang kontrak file/foto.
+- Admin PIN demo 1126/nisa tidak disalin. GAS memakai password bootstrap dan token sesi yang diverifikasi server-side.
+- Pencarian dengan order ID/nomor HP tidak disalin sebagai kontrol akses; portal memakai token acak dan hash token server-side.
+- Dropdown status bebas diganti dengan service transition guard di Apps Script.
+- Metrik laba simulasi tidak disalin. Workspace menampilkan ringkasan operasional dari ledger terverifikasi dan melabelinya bukan laporan laba bersih.
+- Kontrak foto aktual dibangun ulang: upload admin ke Drive privat, preview pelanggan melalui token request, dan approval direset saat foto/kondisi berubah.
 - Harga, tanggal, lokasi dan event di hero harus berasal dari pengaturan; bukan literal di komponen.
 - Utility class Tailwind yang dipakai TSX harus diselaraskan dengan CSS/design system repository. Jangan menambah Tailwind tanpa keputusan tooling.
 - Pecah menjadi page, feature, component, hooks, domain types, API adapter dan service; jangan menyalin seluruh monolit sebagai satu komponen.
@@ -934,21 +934,59 @@ Catatan dokumentasi: google.script.run bersifat asinkron, memiliki callback succ
 
 ---
 
-## 17. Definition of Done untuk migrasi arsitektur
+## 17. Status implementasi dan Definition of Done
 
-Migrasi arsitektur dianggap selesai hanya jika:
+### 17.1 Yang sudah tersedia di branch migrasi
 
-- [ ] React build benar-benar disajikan dari Apps Script HTML Service.
-- [ ] Tidak ada runtime dependency pada Supabase untuk alur utama.
-- [ ] Data katalog, request, unit, order, pembayaran dan pengiriman tersimpan di Google Sheets.
-- [ ] Foto aktual dan bukti pembayaran memakai Drive dengan akses yang diuji.
-- [ ] Admin auth divalidasi server-side.
-- [ ] Customer access token aman dan membatasi akses per request/order.
-- [ ] Fee, status, pembayaran dan alokasi unit diverifikasi oleh server.
-- [ ] Alur pelanggan dan admin lolos end-to-end test.
-- [ ] Laporan berasal dari transaksi yang benar.
-- [ ] Staging GAS diuji sebelum production.
-- [ ] Data Supabase yang diperlukan telah diekspor/dicadangkan atau pemilik proyek menyatakan tidak ada data yang perlu dipindah.
+Status source code pada branch \`architecture/react-google-apps-script\`:
+
+- [x] Sheet schema: Settings, Catalog, Variants, Buyers, Request_Groups, Requests, Units, Orders, Order_Items, Payments, Shipments, Expenses, Events dan Audit_Log.
+- [x] Setup function untuk membuat Spreadsheet, folder Drive privat, sheet/header dan Script Properties.
+- [x] Repository Spreadsheet dengan ID stabil, batch read/write dasar, LockService dan audit log.
+- [x] Bootstrap password admin, token sesi server, logout, dan customer access token yang disimpan sebagai hash.
+- [x] API publik untuk katalog/config/request dan customer portal.
+- [x] Request multi-item, token pelanggan, idempotency payload hash dan retry dengan key yang sama.
+- [x] API admin katalog/varian, dashboard, daftar request, daftar unit, daftar order, pembayaran, shipment, pengeluaran dan ringkasan keuangan.
+- [x] Foto aktual dan bukti pembayaran melalui Drive privat; pembacaan foto/bukti memerlukan token pelanggan atau sesi admin yang valid.
+- [x] Workflow status request, approval foto, alokasi unit, create-order draft/recovery, payment ledger, shipment guard dan expense idempotency.
+- [x] React GAS entry untuk katalog, cart/request, customer portal, approval foto, format order, Shopee dan workspace admin.
+- [x] Workspace admin untuk catalog/variant CRUD, request/daftar buru, deposit + preview bukti + verifikasi, unit allocation, order, settlement/Shopee, shipment/resi, expenses dan ringkasan keuangan dasar.
+- [x] Vite single-HTML build, clasp configuration example, deployment guide, validator HTML/manifest dan syntax check file \`.gs\`.
+- [x] GitHub Actions pada beberapa head branch telah lulus dependency audit, typecheck, unit test, build standar, build GAS dan validator. Tetap gunakan status CI pada head PR terbaru sebagai release signal.
+
+### 17.2 Belum selesai — wajib sebelum cutover
+
+- [ ] Buat Apps Script project milik pemilik JastipNisa, isi \`.clasp.json\` lokal dengan Script ID, lalu lakukan \`clasp push\`.
+- [ ] Jalankan \`setupJastipNisa_\` pada akun Google staging dan verifikasi Spreadsheet/Drive folder serta izin yang dihasilkan.
+- [ ] Bootstrap password admin pada Script Properties. Jangan memasukkan password/secret ke GitHub.
+- [ ] Deploy Web App staging, uji dengan data fiktif, dan pastikan deployment identity/access sesuai manifest.
+- [ ] Uji permission runtime pada user anonim, admin valid, sesi expired/cache miss, dan token pelanggan invalid/expired.
+- [ ] Jalankan end-to-end journey pelanggan dan admin pada Apps Script runtime nyata: request → deposit → pencarian → foto → approval → format order → order → settlement/Shopee → shipment.
+- [ ] Jalankan failure-injection/retry test di setiap langkah multi-sheet, termasuk putus eksekusi saat order, payment dan reservation. Recovery pointer mengurangi duplikasi tetapi tidak membuat Google Sheets menjadi database transaksional.
+- [ ] Verifikasi upload/download preview Drive, tipe MIME, ukuran, batas respons, folder sharing dan akses file.
+- [ ] Uji performa/kuota dengan ukuran data yang mendekati pola operasional.
+- [ ] Tambahkan backup/restore drill serta rekonsiliasi bila operasi multi-sheet terputus.
+- [ ] Pastikan tidak ada data Supabase produksi yang perlu diekspor sebelum schema/dependency lama dihapus.
+- [ ] Migrasikan default app/entry SOWAN sepenuhnya dari Supabase ke GAS setelah acceptance; jangan menghapus source lama sebelum cutover aman.
+- [ ] Lengkapi fitur laporan/export dan event settings jika dibutuhkan untuk MVP final.
+- [ ] Putuskan kebijakan bisnis yang masih terbuka sebelum otomatisasi kondisi terkait.
+- [ ] Uji pada staging, review PR, lalu merge/cutover secara terpisah.
+
+### 17.3 Definition of Done
+
+Migrasi arsitektur dianggap selesai hanya bila semua kriteria berikut terpenuhi:
+
+- [ ] React build benar-benar disajikan dari Web App Apps Script yang dikonfigurasi pemilik.
+- [ ] Alur produksi tidak lagi bergantung pada Supabase.
+- [ ] Data operasional tersimpan di Google Sheets yang dimiliki dan dibackup pemilik.
+- [ ] Foto aktual dan bukti pembayaran memakai Drive privat dengan akses yang diuji.
+- [ ] Admin auth dan customer access token teruji di runtime Apps Script.
+- [ ] Fee, status, pembayaran dan alokasi unit diverifikasi server-side.
+- [ ] Retry/failure recovery lolos test di Apps Script runtime.
+- [ ] Alur pelanggan/admin lolos end-to-end test.
+- [ ] Ringkasan keuangan cocok dengan ledger, refund, HPP dan pengeluaran.
+- [ ] Staging GAS lulus sebelum production.
+- [ ] Data Supabase yang diperlukan diekspor/dicadangkan atau pemilik menyatakan tidak ada yang perlu dipindah.
 - [ ] Dokumentasi setup, deployment, backup dan rollback diperbarui.
 
-**Status saat dokumen dibuat:** peta implementasi dan keputusan arsitektur ditetapkan. Migrasi source code, pembuatan Spreadsheet production, Apps Script deployment, dan cutover belum dilakukan.
+**Status saat dokumen dibuat:** source foundation dan UI React GAS sudah ditambahkan pada branch migrasi dan CI build/syntax checks pernah lulus. Apps Script project, Spreadsheet, Drive folder, otorisasi Google dan deployment staging/production belum dibuat dari repository. Branch SOWAN masih menjadi baseline Supabase sampai PR migrasi ditinjau dan cutover dilakukan.

@@ -697,6 +697,7 @@ function AdminPage() {
           {group.items.map((item) => <RequestEditor key={item.requestId} item={item} onUpdate={updateItem} onUpload={uploadPhoto} onAddUnit={addAndAssignUnit} />)}
           {group.status === 'customer_details_received' && group.verifiedDepositAmount > 0 && <div className="jn-finalize"><p>Deposit terverifikasi {formatRupiah(group.verifiedDepositAmount)}. Pastikan seluruh unit teralokasi dan harga final telah terisi.</p><button className="jn-button jn-button-primary" onClick={() => void makeFinalOrder(group.requestGroupId)}>Buat pesanan final</button></div>}
           {group.status === 'customer_details_received' && group.verifiedDepositAmount <= 0 && <div className="jn-finalize"><p>Pesanan final belum dapat dibuat. Catat dan verifikasi deposit pelanggan terlebih dahulu. Nominal deposit mengikuti kesepakatan admin dengan pelanggan.</p></div>}
+          {group.status === 'order_creating' && group.orderId && <div className="jn-finalize"><p>Pembuatan order sebelumnya terhenti. Gunakan pemulihan untuk melanjutkan tanpa membuat order duplikat.</p><button className="jn-button jn-button-primary" onClick={() => void makeFinalOrder(group.requestGroupId)}>Pulihkan pembuatan order</button></div>}
         </article>)}
       </div>
     </section>

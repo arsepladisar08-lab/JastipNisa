@@ -1,9 +1,37 @@
-function doGet() {
-  var output = HtmlService.createHtmlOutputFromFile('Index')
+function doGet(e) {
+  var parameters = e && e.parameter ? e.parameter : {}
+  var requestedPage = String(parameters.page || '')
+  var page = requestedPage === 'portal' || requestedPage === 'admin' ? requestedPage : 'home'
+  var candidateToken = String(parameters.t || '')
+  var token = page === 'portal' && /^[A-Za-z0-9_-]{40,160}$/.test(candidateToken)
+    ? candidateToken
+    : ''
+  var webAppUrl = ScriptApp.getService().getUrl() || ''
+  var bootstrap = {
+    page: page,
+    token: token,
+    webAppUrl: webAppUrl
+  }
+  // Escape HTML-significant characters before embedding JSON in an inline script.
+  var safeBootstrap = JSON.stringify(bootstrap)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+  var bootstrapScript = '<script>window.__JN_BOOT__=' + safeBootstrap + ';</script>'
+  var html = HtmlService.createHtmlOutputFromFile('Index').getContent()
+  if (!/<head\b[^>]*>/i.test(html)) {
+    throw new Error('Template Index.html tidak memiliki elemen head.')
+  }
+  html = html.replace(/<head\b[^>]*>/i, function (headTag) {
+    return headTag + bootstrapScript
+  })
+  return HtmlService.createHtmlOutput(html)
     .setTitle('JastipNisa')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-  return output
 }
+
 
 function apiHealth() {
   return safeApi_(function () {

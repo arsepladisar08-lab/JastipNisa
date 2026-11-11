@@ -46,9 +46,18 @@ export class GasApiError extends Error {
   }
 }
 
+export function isGasMockEnabled(): boolean {
+  return import.meta.env.DEV &&
+    (import.meta.env.MODE === 'gas-demo' || import.meta.env.VITE_ENABLE_MOCK === 'true')
+}
+
 export function gasCall<T>(method: string, ...args: unknown[]): Promise<T> {
   const root = window.google?.script?.run
   if (!root) {
+    if (import.meta.env.DEV &&
+        (import.meta.env.MODE === 'gas-demo' || import.meta.env.VITE_ENABLE_MOCK === 'true')) {
+      return import('./gasMock').then(({ handleGasMockCall }) => handleGasMockCall<T>(method, args))
+    }
     return Promise.reject(new GasApiError(
       'GAS_BRIDGE_UNAVAILABLE',
       'Backend Apps Script belum terhubung. Buka aplikasi dari URL Web App GAS atau gunakan deployment staging.',

@@ -32,13 +32,13 @@ function appsScriptSingleHtmlPlugin(): Plugin {
         const source = typeof asset.source === 'string'
           ? asset.source
           : new TextDecoder().decode(asset.source)
-        return source.replace(/<\\/style/gi, '<\\\\/style')
-      }).join('\\n')
+        return source.replace(/<\/style/gi, '<\\/style')
+      }).join('\n')
 
-      const script = entryChunk.code.replace(/<\\/script/gi, '<\\\\/script')
+      const script = entryChunk.code.replace(/<\/script/gi, '<\\/script')
       const scriptTag = '<script>' + script + '</script>'
       html = html.replace(
-        /<script\\b[^>]*src=(["'])[^"']+\\1[^>]*>\\s*<\\/script>/i,
+        /<script\b[^>]*src=(["'])[^"']+\1[^>]*>\s*<\/script>/i,
         scriptTag,
       )
       if (!html.includes(scriptTag)) {
@@ -46,22 +46,24 @@ function appsScriptSingleHtmlPlugin(): Plugin {
       }
 
       html = html.replace(
-        /<link\\b[^>]*href=(["'])[^"']+\\.css(?:\\?[^"']*)?\\1[^>]*>/gi,
+        /<link\b[^>]*href=(["'])[^"']+\.css(?:\?[^"']*)?\1[^>]*>/gi,
         '',
       )
       if (cssText) {
-        html = html.replace('</head>', '<style>' + cssText + '</style>\\n</head>')
+        html = html.replace('</head>', '<style>' + cssText + '</style>\n</head>')
       }
-      if (!/<base\\b/i.test(html)) {
-        html = html.replace('<head>', '<head>\\n<base target="_top">')
+      if (!/<base\b/i.test(html)) {
+        html = html.replace('<head>', '<head>\n<base target="_top">')
       }
 
+      const originalName = htmlEntry.fileName
+      delete bundle[originalName]
       htmlEntry.fileName = 'Index.html'
       htmlEntry.source = html
-      delete bundle['index.gas.html']
+      bundle['Index.html'] = htmlEntry
 
-      for (const file of Object.values(bundle)) {
-        if (file.fileName !== 'Index.html') delete bundle[file.fileName]
+      for (const fileName of Object.keys(bundle)) {
+        if (fileName !== 'Index.html') delete bundle[fileName]
       }
     },
   }

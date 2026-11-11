@@ -19,6 +19,12 @@ Pada website publik Vercel, tombol **Mulai Request** mengarah ke React + GAS Web
 - Panduan kontrol pengembangan dan aturan bisnis: [docs/DEVELOPMENT_CONTROL.md](docs/DEVELOPMENT_CONTROL.md).
 - Nomor WhatsApp pada app GAS dibaca dari baris `admin_whatsapp` di sheet `Settings`; isi format internasional digit saja dan set `is_public` ke `TRUE`.
 
+## Apps Script deployment
+
+- `npm run gas:push` builds `gas/Index.html`, runs GAS validation, then uploads with clasp. It must be run from the repository root with a valid local `.clasp.json` and an authenticated clasp session.
+- To keep an already shared `/exec` URL, push the files and update that existing Web App deployment to **New version** in Apps Script → Deploy → Manage deployments. Do not create a new deployment unless you intend to use a different URL.
+- Full setup and redeployment instructions: [docs/GAS_SETUP.md](docs/GAS_SETUP.md).
+
 ## P4/P5 delivery
 
 - Customer cancellation requests and admin review are implemented as a separate, non-destructive review register. Acceptance does not automatically cancel an order, release inventory or issue a refund.

@@ -54,7 +54,7 @@ Jangan push jika build atau validasi gagal.
 
 ## 4. Setup Spreadsheet dan Drive
 
-1. Jalankan npm run gas:push untuk mengunggah source .gs, manifest, dan HTML hasil build ke Apps Script.
+1. Dari root repository, pastikan `.clasp.json` menunjuk ke Script ID project staging yang benar dan `clasp login` sudah terotorisasi. Jalankan `npm run gas:push`. Script ini otomatis menjalankan `npm run build:gas` (membuat `gas/Index.html`), `npm run gas:validate`, lalu `clasp push` untuk mengunggah source `.gs`, manifest, dan HTML hasil build.
 2. Buka project dengan clasp open-script.
 3. Pilih fungsi setupJastipNisa_ di editor Apps Script lalu klik Run.
 4. Setujui izin Google Sheets dan Google Drive yang diminta.
@@ -139,18 +139,20 @@ Jika variable belum dikonfigurasi atau URL tidak valid, website Vercel tetap men
 Setiap perubahan source:
 
 ~~~bash
-npm run build:gas
-npm run gas:validate
 npm run gas:push
 ~~~
 
-Untuk membuat deployment version baru:
+Perintah `gas:push` sudah membangun dan memvalidasi HTML secara otomatis sebelum mengunggah. Jangan hanya menjalankan `clasp push` secara langsung setelah mengubah source React, karena file `gas/Index.html` dibuat oleh proses build dan sengaja tidak disimpan ke Git.
+
+Untuk membuat deployment baru (URL /exec baru), jalankan:
 
 ~~~bash
 npm run gas:deploy
 ~~~
 
-Periksa Deploy → Manage deployments pada Apps Script untuk memastikan versi aktif yang dipakai. Jangan edit gas/Index.html secara manual; edit React source lalu build ulang.
+**Untuk memperbarui URL /exec yang sudah dibagikan, jangan membuat deployment baru.** Setelah `npm run gas:push` berhasil, buka Apps Script → Deploy → Manage deployments → pilih deployment Web App yang URL-nya ingin dipertahankan → Edit (ikon pensil) → Version: **New version** → Deploy. Cara ini memperbarui versi aktif pada deployment yang sama sehingga deployment ID/URL tetap sama. Membuat deployment baru akan menghasilkan URL deployment lain; bila itu dilakukan, perbarui juga `VITE_GAS_WEBAPP_URL` pada environment Vercel yang terkait lalu redeploy.
+
+Periksa bahwa daftar Files di Apps Script menampilkan `Index.html` (nama file di editor dapat terlihat sebagai `Index`). Jangan edit `gas/Index.html` secara manual; edit React source lalu build ulang.
 
 ## 9. Data, backup, dan rollback
 

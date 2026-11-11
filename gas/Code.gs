@@ -221,9 +221,12 @@ function apiAdminListRequests(sessionToken, statusFilter) {
         }).map(function (row) {
           return {
             requestId: String(row.request_id),
+            productId: String(row.product_id),
+            variantId: String(row.variant_id || ''),
             productName: String(row.product_name_snapshot),
             variantName: String(row.variant_name_snapshot || ''),
             quantity: Number(row.quantity),
+            assignedUnitCount: safeJsonParse_(row.unit_ids_json, []).length,
             status: String(row.status),
             actualCondition: String(row.actual_condition || ''),
             customerDecision: String(row.customer_decision || '')
@@ -297,6 +300,12 @@ function apiAdminSaveCatalogProduct(sessionToken, payload) {
 function apiAdminSaveVariant(sessionToken, payload) {
   return safeApi_(function () {
     return saveVariantAsAdmin_(sessionToken, payload)
+  })
+}
+
+function apiAdminConfirmPayment(sessionToken, paymentId, decision) {
+  return safeApi_(function () {
+    return verifyPaymentAsAdmin_(sessionToken, paymentId, decision)
   })
 }
 

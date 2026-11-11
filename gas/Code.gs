@@ -174,6 +174,104 @@ function apiAdminLogout(sessionToken) {
   })
 }
 
+function apiAdminListCatalog(sessionToken) {
+  return safeApi_(function () {
+    requireAdmin_(sessionToken)
+    return {
+      products: readRecords_('Catalog').map(function (row) {
+        return {
+          productId: String(row.product_id),
+          name: String(row.name),
+          slug: String(row.slug),
+          category: String(row.category || ''),
+          referencePrice: Number(row.official_price || 0),
+          officialUrl: String(row.official_url || ''),
+          imageUrl: String(row.image_url || ''),
+          sourceCheckedAt: String(row.source_checked_at || ''),
+          isActive: row.is_active === true || String(row.is_active).toLowerCase() === 'true',
+          sortOrder: Number(row.sort_order || 0)
+        }
+      }),
+      variants: readRecords_('Variants').map(function (row) {
+        return {
+          variantId: String(row.variant_id),
+          productId: String(row.product_id),
+          name: String(row.name),
+          imageUrl: String(row.image_url || ''),
+          isActive: row.is_active === true || String(row.is_active).toLowerCase() === 'true'
+        }
+      })
+    }
+  })
+}
+
+function apiAdminListOrders(sessionToken) {
+  return safeApi_(function () {
+    requireAdmin_(sessionToken)
+    var orders = readRecords_('Orders')
+    var payments = readRecords_('Payments')
+    var shipments = readRecords_('Shipments')
+    return orders.filter(function (order) {
+      return String(order.status) !== 'creating'
+    }).map(function (order) {
+      var orderPayments = payments.filter(function (payment) {
+        return String(payment.order_id) === String(order.order_id)
+      })
+      var verifiedPaid = orderPayments.filter(function (payment) {
+        return String(payment.verification_status) === 'verified'
+      }).reduce(function (sum, payment) {
+        var amount = Number(payment.amount || 0)
+        return sum + (String(payment.type) === 'refund' ? -amount : amount)
+      }, 0)
+      var shipment = shipments.filter(function (row) {
+        return String(row.order_id) === String(order.order_id)
+      })[0] || {}
+      return {
+        orderId: String(order.order_id),
+        orderCode: String(order.order_code),
+        requestGroupId: String(order.request_group_id || ''),
+        customerName: String(order.customer_name || ''),
+        customerPhone: String(order.customer_phone || ''),
+        shippingAddress: String(order.shipping_address || ''),
+        productCount: Number(order.product_count || 0),
+        subtotal: Number(order.product_subtotal || 0),
+        fee: Number(order.jastip_fee || 0),
+        shippingFee: Number(order.shipping_fee || 0),
+        totalAmount: Number(order.total_amount || 0),
+        totalPaid: verifiedPaid,
+        balance: Math.max(0, Number(order.total_amount || 0) - verifiedPaid),
+        paymentStatus: String(order.payment_status || 'unpaid'),
+        status: String(order.status || ''),
+        shopeeUsername: String(order.shopee_username || ''),
+        shopeeCheckoutUrl: String(order.shopee_checkout_url || ''),
+        courier: String(shipment.courier || order.courier || ''),
+        trackingNumber: String(shipment.tracking_number || order.tracking_number || ''),
+        shipmentStatus: String(shipment.status || ''),
+        createdAt: String(order.created_at || ''),
+        payments: orderPayments.map(function (payment) {
+          return {
+            paymentId: String(payment.payment_id),
+            type: String(payment.type),
+            amount: Number(payment.amount || 0),
+            method: String(payment.method || ''),
+            verificationStatus: String(payment.verification_status || ''),
+            hasProof: Boolean(payment.proof_file_id),
+            occurredAt: String(payment.occurred_at || '')
+          }
+        })
+      }
+    }).sort(function (left, right) {
+      return String(right.createdAt).localeCompare(String(left.createdAt))
+    })
+  })
+}
+
+function apiAdminUpdateOrderOptions(sessionToken, payload) {
+  return safeApi_(function () {
+    return updateOrderOptionsAsAdmin_(sessionToken, payload)
+  })
+}
+
 function apiAdminGetDashboard(sessionToken) {
   return safeApi_(function () {
     requireAdmin_(sessionToken)

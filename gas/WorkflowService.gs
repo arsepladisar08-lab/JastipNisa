@@ -458,12 +458,15 @@ function recoverOrderCreation_(session, requestGroupId, draftOrder) {
     updateRecordsById_('Requests', 'request_id', requestOrderUpdates)
   }
 
-  readRecords_('Payments').filter(function (payment) {
+  var depositOrderUpdates = readRecords_('Payments').filter(function (payment) {
     return String(payment.request_group_id) === String(requestGroupId) &&
       !payment.order_id && String(payment.verification_status) === 'verified'
-  }).forEach(function (payment) {
-    updateRecord_('Payments', 'payment_id', payment.payment_id, { order_id: orderId })
+  }).map(function (payment) {
+    return { id: payment.payment_id, patch: { order_id: orderId } }
   })
+  if (depositOrderUpdates.length) {
+    updateRecordsById_('Payments', 'payment_id', depositOrderUpdates)
+  }
 
   updateRecord_('Orders', 'order_id', orderId, {
     status: 'confirmed',

@@ -176,6 +176,12 @@ function apiAdminLogout(sessionToken) {
   })
 }
 
+function apiAdminChangePassword(sessionToken, currentPassword, newPassword) {
+  return safeApi_(function () {
+    return changeAdminPassword_(sessionToken, currentPassword, newPassword)
+  })
+}
+
 function apiAdminListCatalog(sessionToken) {
   return safeApi_(function () {
     requireAdmin_(sessionToken)

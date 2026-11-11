@@ -43,7 +43,7 @@ Dokumen ini adalah ringkasan operasional untuk menjaga kesinambungan sesi pengem
 - `src/lib/gasMock.ts` menyediakan API mock in-memory; jalankan `npm run dev:gas-demo` (port 3001), login admin demo dengan `demo-admin`.
 - Mock hanya aktif pada Vite development dengan mode/flag eksplisit; validator build GAS menolak marker mock di bundle produksi.
 
-### P2/P3 — diimplementasikan pada branch kerja ini, menunggu review dan CI
+### P2/P3 — merged ke `SOWAN` (PR #11)
 
 **P2 — Security & transaction integrity**
 - Mutasi admin yang memakai `LockService` memvalidasi ulang sesi setelah lock didapat, sehingga logout/rotasi password tidak meninggalkan mutasi yang lolos hanya dari pemeriksaan awal.
@@ -68,7 +68,8 @@ Dokumen ini adalah ringkasan operasional untuk menjaga kesinambungan sesi pengem
 
 **Batas verifikasi**
 - CI memeriksa typecheck, unit test, build Vercel, build single-file GAS, dan validator struktur/guard keamanan.
-- Pengujian integrasi nyata terhadap Script Properties, Google Sheets, Drive, dan Web App staging belum dilakukan dari branch ini. Jangan menganggap perubahan sudah live sebelum owner menjalankan staging smoke test.
+- GitHub Actions pada PR #11 lulus: dependency audit, typecheck, unit tests, build Vercel, build GAS single-file, dan GAS validation.
+- Pengujian integrasi nyata terhadap Script Properties, Google Sheets, Drive, dan Web App staging belum dilakukan. Jangan menganggap perubahan sudah live sebelum owner menjalankan staging smoke test.
 ## Urutan kerja yang disarankan
 
 ### P0 — Stabilkan routing dan kontrak app

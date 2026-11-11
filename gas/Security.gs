@@ -75,17 +75,24 @@ function requireAdmin_(sessionToken) {
   return safeJsonParse_(session, { role: 'admin' })
 }
 
-function adminLogin_(password) {
+function adminLogin_(password, clientId) {
   var input = String(password || '')
-  if (input.length < 1 || input.length > 256) {
+  var browserId = String(clientId || '')
+  if (input.length < 1 || input.length > 256 ||
+      !/^[A-Za-z0-9_-]{24,100}$/.test(browserId)) {
     throw publicError_('LOGIN_FAILED', 'Password admin tidak sesuai.')
   }
 
   var properties = getScriptProperties_()
+  var pepper = getAuthPepper_()
+  var cache = CacheService.getScriptCache()
+  // Best-effort friction per browser installation. This avoids a shared
+  // global lockout that an anonymous visitor could trigger for every admin.
+  var attemptKey = 'jn_login_' + hmacHex_(browserId, pepper)
+  var attemptState = safeJsonParse_(cache.get(attemptKey), { count: 0, lockedUntil: 0 })
   var now = Date.now()
-  var lockedUntil = Number(properties.getProperty('JN_AUTH_LOCKED_UNTIL') || 0)
-  if (lockedUntil > now) {
-    throw publicError_('LOGIN_RATE_LIMITED', 'Terlalu banyak percobaan login. Coba lagi beberapa menit kemudian.')
+  if (Number(attemptState.lockedUntil || 0) > now) {
+    throw publicError_('LOGIN_RATE_LIMITED', 'Terlalu banyak percobaan dari browser ini. Coba lagi beberapa menit kemudian.')
   }
 
   var expectedHash = properties.getProperty('JN_ADMIN_PASSWORD_HASH')
@@ -94,28 +101,22 @@ function adminLogin_(password) {
     throw publicError_('ADMIN_NOT_CONFIGURED', 'Akun admin belum disiapkan oleh pemilik aplikasi.')
   }
 
-  var actualHash = hmacHex_(salt + ':' + input, getAuthPepper_())
+  var actualHash = hmacHex_(salt + ':' + input, pepper)
   if (!constantTimeEqual_(actualHash, expectedHash)) {
-    withScriptLock_(function () {
-      var count = Number(properties.getProperty('JN_AUTH_FAILED_COUNT') || 0) + 1
-      properties.setProperty('JN_AUTH_FAILED_COUNT', String(count))
-      if (count >= 8) {
-        properties.setProperty('JN_AUTH_LOCKED_UNTIL', String(Date.now() + (15 * 60 * 1000)))
-        properties.setProperty('JN_AUTH_FAILED_COUNT', '0')
-      }
-    })
-    throw publicError_('LOGIN_FAILED', 'Email atau password admin tidak sesuai.')
+    var count = Number(attemptState.count || 0) + 1
+    var lockedUntil = count >= 8 ? now + (15 * 60 * 1000) : 0
+    cache.put(attemptKey, JSON.stringify({
+      count: count >= 8 ? 0 : count,
+      lockedUntil: lockedUntil
+    }), 15 * 60)
+    throw publicError_('LOGIN_FAILED', 'Password admin tidak sesuai.')
   }
 
-  withScriptLock_(function () {
-    properties.deleteProperty('JN_AUTH_FAILED_COUNT')
-    properties.deleteProperty('JN_AUTH_LOCKED_UNTIL')
-  })
-
+  cache.remove(attemptKey)
   var token = createSessionToken_()
   var cacheKey = sessionCacheKey_(token)
   var nowIso = isoNow_()
-  CacheService.getScriptCache().put(cacheKey, JSON.stringify({
+  cache.put(cacheKey, JSON.stringify({
     role: 'admin',
     createdAt: nowIso
   }), 1800)

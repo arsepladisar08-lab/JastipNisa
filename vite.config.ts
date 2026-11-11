@@ -1,22 +1,17 @@
+import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
 const projectRoot = dirname(fileURLToPath(import.meta.url))
+const gasHtmlTemplatePath = resolve(projectRoot, 'index.gas.html')
 
 function appsScriptSingleHtmlPlugin(): Plugin {
   return {
     name: 'jastipnisa-apps-script-single-html',
     apply: 'build',
     generateBundle(_options, bundle) {
-      const htmlEntry = Object.values(bundle).find(
-        (item) => item.type === 'asset' && item.fileName === 'index.gas.html',
-      )
-      if (!htmlEntry || htmlEntry.type !== 'asset' || typeof htmlEntry.source !== 'string') {
-        this.error('index.gas.html was not emitted by Vite.')
-      }
-
       const entryChunk = Object.values(bundle).find(
         (item) => item.type === 'chunk' && item.isEntry,
       )
@@ -24,7 +19,7 @@ function appsScriptSingleHtmlPlugin(): Plugin {
         this.error('A single JavaScript entry chunk is required for the Apps Script build.')
       }
 
-      let html = htmlEntry.source
+      let html = readFileSync(gasHtmlTemplatePath, 'utf8')
       const cssAssets = Object.values(bundle).filter(
         (item) => item.type === 'asset' && item.fileName.endsWith('.css'),
       )
@@ -42,13 +37,9 @@ function appsScriptSingleHtmlPlugin(): Plugin {
         scriptTag,
       )
       if (!html.includes(scriptTag)) {
-        this.error('Could not inline the Vite JavaScript entry into the Apps Script HTML.')
+        this.error('Could not inline the React entry into the Apps Script HTML template.')
       }
 
-      html = html.replace(
-        /<link\b[^>]*href=(["'])[^"']+\.css(?:\?[^"']*)?\1[^>]*>/gi,
-        '',
-      )
       if (cssText) {
         html = html.replace('</head>', '<style>' + cssText + '</style>\n</head>')
       }
@@ -56,15 +47,14 @@ function appsScriptSingleHtmlPlugin(): Plugin {
         html = html.replace('<head>', '<head>\n<base target="_top">')
       }
 
-      const originalName = htmlEntry.fileName
-      delete bundle[originalName]
-      htmlEntry.fileName = 'Index.html'
-      htmlEntry.source = html
-      bundle['Index.html'] = htmlEntry
-
       for (const fileName of Object.keys(bundle)) {
-        if (fileName !== 'Index.html') delete bundle[fileName]
+        delete bundle[fileName]
       }
+      this.emitFile({
+        type: 'asset',
+        fileName: 'Index.html',
+        source: html,
+      })
     },
   }
 }
@@ -87,7 +77,7 @@ export default defineConfig(({ mode }) => {
           cssCodeSplit: false,
           sourcemap: false,
           rollupOptions: {
-            input: resolve(projectRoot, 'index.gas.html'),
+            input: resolve(projectRoot, 'src/gas/main.tsx'),
             output: {
               format: 'iife',
               name: 'JastipNisaBundle',

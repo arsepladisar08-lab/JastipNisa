@@ -199,6 +199,7 @@ function apiAdminListRequests(sessionToken, statusFilter) {
     var groups = readRecords_('Request_Groups')
     var requests = readRecords_('Requests')
     var buyers = readRecords_('Buyers')
+    var payments = readRecords_('Payments')
     var wanted = String(statusFilter || 'all')
     return groups.filter(function (group) {
       var items = requests.filter(function (row) {
@@ -216,6 +217,25 @@ function apiAdminListRequests(sessionToken, statusFilter) {
         createdAt: String(group.created_at),
         customerName: String(buyer.name || ''),
         customerPhone: String(buyer.phone || ''),
+        customerAddress: String(buyer.address || ''),
+        payments: payments.filter(function (payment) {
+          return String(payment.request_group_id) === String(group.request_group_id)
+        }).map(function (payment) {
+          return {
+            paymentId: String(payment.payment_id),
+            type: String(payment.type),
+            amount: Number(payment.amount || 0),
+            method: String(payment.method || ''),
+            verificationStatus: String(payment.verification_status),
+            occurredAt: String(payment.occurred_at || ''),
+            notes: String(payment.notes || '')
+          }
+        }),
+        verifiedDepositAmount: payments.filter(function (payment) {
+          return String(payment.request_group_id) === String(group.request_group_id) &&
+            String(payment.type) === 'deposit' &&
+            String(payment.verification_status) === 'verified'
+        }).reduce(function (sum, payment) { return sum + Number(payment.amount || 0) }, 0),
         items: requests.filter(function (row) {
           return String(row.request_group_id) === String(group.request_group_id)
         }).map(function (row) {
@@ -288,6 +308,12 @@ function apiAdminVerifyPayment(sessionToken, paymentId, decision) {
 function apiAdminAddPayment(sessionToken, payload) {
   return safeApi_(function () {
     return addPaymentAsAdmin_(sessionToken, payload)
+  })
+}
+
+function apiAdminUploadPaymentProof(sessionToken, payload) {
+  return safeApi_(function () {
+    return uploadPaymentProofAsAdmin_(sessionToken, payload)
   })
 }
 

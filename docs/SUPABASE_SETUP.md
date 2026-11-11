@@ -1,58 +1,22 @@
-# Supabase Setup — JastipNisa
+# Supabase Setup — Deprecated
 
-## 1. Create project
+**Dokumen ini tidak berlaku untuk target arsitektur baru.**
 
-Create a Supabase project for JastipNisa. Use a development project first. Keep database backups and restrict dashboard access to trusted maintainers.
+Pada 11 November 2026, arah pengembangan JastipNisa ditetapkan menjadi:
 
-## 2. Configure application environment
+- React + Vite + TypeScript
+- Google Apps Script HTML Service dan server-side services
+- Google Sheets untuk data operasional
+- Google Drive untuk file
+- google.script.run untuk komunikasi frontend/backend
 
-Copy `.env.example` to `.env.local` and set:
-- `VITE_SUPABASE_URL`: Project URL.
-- `VITE_SUPABASE_ANON_KEY`: anon/publishable browser key.
-- `VITE_ADMIN_WHATSAPP`: admin WhatsApp phone in international digits without a plus sign.
+Jangan membuat project Supabase baru atau memasukkan kredensial Supabase untuk mengikuti arsitektur target ini.
 
-Only public/publishable credentials belong in `VITE_*` variables. Never add the service-role key to Vite environment variables.
+Repository SOWAN masih memuat source code Supabase sebagai baseline migrasi. Jangan menghapus database schema/migration, dependency, atau data yang mungkin digunakan sampai pengganti GAS lolos pengujian, backup selesai dan cutover disetujui.
 
-## 3. Apply schema
+Lihat:
+- [Peta Implementasi Terpadu React + Google Apps Script](IMPLEMENTATION_MAP_REACT_GAS.md)
+- [Arsitektur target](ARCHITECTURE.md)
+- [Roadmap implementasi](IMPLEMENTATION.md)
 
-In the Supabase SQL Editor, run `supabase/migrations/202611110001_initial_schema.sql`.
-
-Review the migration before applying it to any existing production database. This repository started empty, but schema changes are still consequential.
-
-## 4. Seed official catalog references
-
-Run `supabase/seed.sql`. The 12 product rows are a point-in-time reference snapshot from the official product listing. It does not create physical stock records and does not guarantee price/variant availability. Recheck source prices and product pages before quoting a customer. Run `supabase/tests/fee_rule_test.sql` to verify the database fee schedule.
-
-## 5. Create and promote the first admin
-
-1. Open Authentication → Users in the Supabase dashboard.
-2. Create the intended admin account and complete any configured email confirmation.
-3. Open SQL Editor and run the following with the exact email used above:
-
-```sql
-update public.profiles
-set role = 'admin', is_active = true, updated_at = now()
-where id = (
-  select id from auth.users
-  where email = 'YOUR_ADMIN_EMAIL'
-);
-```
-
-4. Verify exactly one intended account is promoted.
-5. Sign in at `/admin/login`.
-
-All newly registered Auth users receive the `customer` role. A normal user cannot self-promote because profile mutations are restricted by RLS.
-
-## 6. Verify RLS before public release
-
-- Anonymous visitor: can select active catalog products and variants only.
-- Anonymous visitor: cannot read or write customer, request, unit, order, payment, shipment, expense or profile data.
-- Authenticated customer: can read their own profile only and has no operational table access.
-- Admin: can access operational tables after the profile role is promoted.
-- Customer cannot change their role to admin through the client.
-
-Use a disposable project and Supabase SQL/editor/API testing to validate both allowed and denied operations. Never paste private customer data into test fixtures.
-
-## 7. Storage
-
-The initial migration provisions private `unit-photos` and `payment-proofs` buckets (10 MB max, image types plus PDF for payment proofs) with admin-only `storage.objects` policies. The admin UI uploads actual unit photos, request-stage deposits, order deposits and payment/refund proofs; signed URLs expire after one hour. Never use public buckets for these files.
+Tidak ada perubahan pada project/database Supabase live melalui pembaruan dokumentasi ini.

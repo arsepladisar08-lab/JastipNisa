@@ -57,10 +57,14 @@ function appsScriptSingleHtmlPlugin(): Plugin {
   }
 }
 
-export default defineConfig(({ mode }) => {
-  const isGas = mode === 'gas'
+export default defineConfig(({ mode, command }) => {
+  const isGas = mode === 'gas' || mode === 'gas-demo'
+  const isProductionGasBuild = mode === 'gas' && command === 'build'
   return {
     plugins: [react(), ...(isGas ? [appsScriptSingleHtmlPlugin()] : [])],
+    define: isProductionGasBuild
+      ? { 'import.meta.env.VITE_ENABLE_MOCK': 'false' }
+      : undefined,
     publicDir: isGas ? false : 'public',
     base: './',
     server: {

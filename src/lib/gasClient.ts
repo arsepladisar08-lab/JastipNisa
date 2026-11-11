@@ -157,6 +157,16 @@ export type AdminDashboard = {
   paymentsAwaitingVerification: number
 }
 
+export type AdminRequestPayment = {
+  paymentId: string
+  type: string
+  amount: number
+  method: string
+  verificationStatus: string
+  occurredAt: string
+  notes: string
+}
+
 export type AdminRequestGroup = {
   requestGroupId: string
   requestCode: string
@@ -164,6 +174,9 @@ export type AdminRequestGroup = {
   createdAt: string
   customerName: string
   customerPhone: string
+  customerAddress: string
+  verifiedDepositAmount: number
+  payments: AdminRequestPayment[]
   items: Array<{
     requestId: string
     productName: string
@@ -275,4 +288,43 @@ export function createAdminOrder(sessionToken: string, requestGroupId: string) {
 
 export function confirmCustomerShopee(token: string, username: string) {
   return gasCall<{ saved: boolean }>('apiCustomerConfirmShopee', token, username)
+}
+
+export function uploadAdminPaymentProof(
+  sessionToken: string,
+  payload: { fileName: string; mimeType: string; base64: string },
+) {
+  return gasCall<{ fileId: string; fileName: string }>('apiAdminUploadPaymentProof', sessionToken, payload)
+}
+
+export function addAdminPayment(
+  sessionToken: string,
+  payload: {
+    requestGroupId: string
+    type: 'deposit' | 'settlement' | 'shipping' | 'refund' | 'shopee'
+    amount: number
+    method: string
+    proofFileId?: string
+    idempotencyKey: string
+    notes?: string
+  },
+) {
+  return gasCall<{ paymentId: string; verificationStatus: string; reused: boolean }>(
+    'apiAdminAddPayment',
+    sessionToken,
+    payload,
+  )
+}
+
+export function verifyAdminPayment(
+  sessionToken: string,
+  paymentId: string,
+  decision: 'verified' | 'rejected',
+) {
+  return gasCall<{ saved: boolean; verificationStatus: string }>(
+    'apiAdminVerifyPayment',
+    sessionToken,
+    paymentId,
+    decision,
+  )
 }

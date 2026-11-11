@@ -35,6 +35,16 @@ Dokumen ini adalah ringkasan operasional untuk menjaga kesinambungan sesi pengem
 - Rotasi password admin menggunakan auth version sudah ada.
 - Idempotency payload request sudah memiliki commit tersendiri.
 
+### Implementasi P0/P1 pada branch kerja (menunggu PR review)
+
+- `doGet(e)` membaca `page` dan `t`, melakukan allow-list halaman serta validasi pola token, lalu menyisipkan `window.__JN_BOOT__` yang sudah di-escape.
+- `src/gas/main.tsx` memindahkan bootstrap portal/admin ke route HashRouter dan menyimpan token portal yang tervalidasi ke sessionStorage.
+- Builder tautan portal/admin ditambahkan di `src/lib/gasWebApp.ts`; token yang salah format atau token pada halaman admin ditolak.
+- Request baru dan reissue token admin menampilkan tautan portal siap salin bila URL Web App tersedia.
+- `src/lib/gasMock.ts` meniru API GAS di memori, memuat dua request group, satu order, satu pembayaran awaiting verification, dan data katalog sintetis.
+- Jalankan preview demo dengan `npm run dev:gas-demo` (port 3001). Password admin demo: `demo-admin`.
+- Mock tidak aktif di production; validator bundle GAS menolak marker kode mock bila masuk ke HTML produksi.
+
 ### Gap yang perlu ditangani
 
 1. `gas/Code.gs` → `doGet()` belum menerima parameter `page`/token. URL portal/admin yang deep-linked belum diselesaikan.

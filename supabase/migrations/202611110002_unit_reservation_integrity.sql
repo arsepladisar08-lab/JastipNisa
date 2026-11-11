@@ -371,7 +371,7 @@ begin
     raise exception 'Admin access required' using errcode = '42501';
   end if;
 
-  if p_order_id is null or p_status not in ('preparing', 'shipped', 'delivered', 'issue') then
+  if p_order_id is null or p_status is null or p_status not in ('preparing', 'shipped', 'delivered', 'issue') then
     raise exception 'Shipment order and supported status are required' using errcode = '22023';
   end if;
 

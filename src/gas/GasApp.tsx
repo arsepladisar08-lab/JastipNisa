@@ -134,7 +134,8 @@ function HomePage() {
 
   function updateCart(productId: string, variantId: string, quantity: number) {
     setCart((current) => {
-      const next = current.filter((line) => line.productId !== productId || line.variantId !== variantId)
+      // One selected variant per product per request group keeps the selector and cart in sync.
+      const next = current.filter((line) => line.productId !== productId)
       if (quantity > 0) next.push({ productId, variantId, quantity })
       return next
     })
@@ -376,7 +377,7 @@ function PortalPage() {
             <div className="jn-portal-item-head"><div><strong>{item.productName}</strong><small>{item.variantName || 'Varian tidak ditentukan'} · {item.quantity} pcs</small></div><span className="jn-status">{displayStatus(item.status)}</span></div>
             {item.actualCondition && <p className="jn-condition">{item.actualCondition}</p>}
             {photos[item.requestId]?.length > 0 && <div className="jn-photo-grid">{photos[item.requestId].map((src, index) => <img key={index} src={src} alt={'Foto aktual ' + item.productName + ' ' + (index + 1)} />)}</div>}
-            {item.status === 'found' && !item.customerDecision && <div className="jn-inline-actions"><button type="button" disabled={busyItem === item.requestId} className="jn-button jn-button-primary" onClick={() => void decide(item.requestId, 'approved')}>Setujui barang</button><button type="button" disabled={busyItem === item.requestId} className="jn-button jn-button-outline" onClick={() => void decide(item.requestId, 'rejected')}>Belum setuju</button></div>}
+            {item.status === 'found' && item.photoCount > 0 && !item.customerDecision && <div className="jn-inline-actions"><button type="button" disabled={busyItem === item.requestId} className="jn-button jn-button-primary" onClick={() => void decide(item.requestId, 'approved')}>Setujui barang</button><button type="button" disabled={busyItem === item.requestId} className="jn-button jn-button-outline" onClick={() => void decide(item.requestId, 'rejected')}>Belum setuju</button></div>}
             {item.customerDecision && <p className="jn-muted">Keputusan kamu: {item.customerDecision === 'approved' ? 'Disetujui' : 'Belum disetujui'}</p>}
           </article>)}
         </div>
@@ -387,7 +388,7 @@ function PortalPage() {
           <label className="jn-field">Alamat lengkap<textarea required rows={3} value={address} onChange={(event) => setAddress(event.target.value)} /></label>
           <button className="jn-button jn-button-primary">Kirim format order</button>
         </form>}
-        {portal.order && <div className="jn-order-summary"><span className="jn-eyebrow">FINAL ORDER</span><h3>{portal.order.orderCode}</h3><p>Status: {displayStatus(portal.order.status)}</p><strong>{formatRupiah(portal.order.totalAmount)}</strong>{portal.order.courier && <p>{portal.order.courier} · {portal.order.trackingNumber}</p>}
+        {portal.order && <div className="jn-order-summary"><span className="jn-eyebrow">FINAL ORDER</span><h3>{portal.order.orderCode}</h3><p>Status: {displayStatus(portal.order.status)} · Pembayaran: {displayStatus(portal.order.paymentStatus)}</p><strong>{formatRupiah(portal.order.totalAmount)}</strong>{portal.order.courier && <p>{portal.order.courier} · {portal.order.trackingNumber}</p>}
           {portal.order.shopeeCheckoutUrl && <form className="jn-form" onSubmit={submitShopee}><label className="jn-field">Nama akun Shopee<input required value={shopeeUsername} onChange={(event) => setShopeeUsername(event.target.value)} /></label><button className="jn-button jn-button-primary">Konfirmasi akun Shopee</button></form>}
         </div>}
       </section>}

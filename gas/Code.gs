@@ -118,6 +118,28 @@ function apiCustomerGetPortal(accessToken) {
     var order = readRecords_('Orders').filter(function (row) {
       return String(row.request_group_id) === String(group.request_group_id)
     })[0] || null
+    var cancellationRows = readRecords_('Cancellation_Requests').filter(function (row) {
+      return String(row.request_group_id) === String(group.request_group_id)
+    }).sort(function (left, right) {
+      return String(right.created_at).localeCompare(String(left.created_at))
+    })
+    var cancellationRequests = cancellationRows.map(function (row) {
+      return {
+        cancellationRequestId: String(row.cancellation_request_id),
+        reason: String(row.reason || ''),
+        status: String(row.status || ''),
+        reviewNote: String(row.review_note || ''),
+        createdAt: String(row.created_at || ''),
+        reviewedAt: String(row.reviewed_at || '')
+      }
+    })
+    var hasOpenCancellation = cancellationRequests.some(function (row) {
+      return ['pending', 'accepted_pending_execution'].indexOf(row.status) !== -1
+    })
+    var canRequestCancellation = Boolean(order) &&
+      ['confirmed', 'packing'].indexOf(String(order.status || '')) !== -1 &&
+      !hasOpenCancellation
+
     return {
       requestCode: String(group.request_code),
       status: String(group.status),
@@ -141,11 +163,20 @@ function apiCustomerGetPortal(accessToken) {
         paymentStatus: String(order.payment_status || 'unpaid'),
         shopeeCheckoutUrl: String(order.shopee_checkout_url || ''),
         trackingNumber: String(order.tracking_number || ''),
-        courier: String(order.courier || '')
+        courier: String(order.courier || ''),
+        canRequestCancellation: canRequestCancellation,
+        cancellationRequests: cancellationRequests
       } : null
     }
   })
 }
+
+function apiCustomerRequestOrderCancellation(accessToken, reason) {
+  return safeApi_(function () {
+    return createCustomerCancellationRequest_(accessToken, reason)
+  })
+}
+
 
 function apiCustomerGetPhoto(accessToken, requestId, photoIndex) {
   return safeApi_(function () {
@@ -251,23 +282,42 @@ function apiAdminListOrders(sessionToken) {
     var orders = readRecords_('Orders')
     var payments = readRecords_('Payments')
     var shipments = readRecords_('Shipments')
+    var cancellations = readRecords_('Cancellation_Requests')
+    var paymentsByOrder = Object.create(null)
+    var shipmentsByOrder = Object.create(null)
+    var cancellationsByOrder = Object.create(null)
+
+    payments.forEach(function (payment) {
+      var key = String(payment.order_id || '')
+      if (!key) return
+      if (!paymentsByOrder[key]) paymentsByOrder[key] = []
+      paymentsByOrder[key].push(payment)
+    })
+    shipments.forEach(function (shipment) {
+      var key = String(shipment.order_id || '')
+      if (key && !shipmentsByOrder[key]) shipmentsByOrder[key] = shipment
+    })
+    cancellations.forEach(function (request) {
+      var key = String(request.order_id || '')
+      if (!key) return
+      if (!cancellationsByOrder[key]) cancellationsByOrder[key] = []
+      cancellationsByOrder[key].push(request)
+    })
+
     return orders.filter(function (order) {
       return String(order.status) !== 'creating'
     }).map(function (order) {
-      var orderPayments = payments.filter(function (payment) {
-        return String(payment.order_id) === String(order.order_id)
-      })
+      var orderId = String(order.order_id)
+      var orderPayments = paymentsByOrder[orderId] || []
       var verifiedPaid = orderPayments.filter(function (payment) {
         return String(payment.verification_status) === 'verified'
       }).reduce(function (sum, payment) {
         var amount = Number(payment.amount || 0)
         return sum + (String(payment.type) === 'refund' ? -amount : amount)
       }, 0)
-      var shipment = shipments.filter(function (row) {
-        return String(row.order_id) === String(order.order_id)
-      })[0] || {}
+      var shipment = shipmentsByOrder[orderId] || {}
       return {
-        orderId: String(order.order_id),
+        orderId: orderId,
         orderCode: String(order.order_code),
         requestGroupId: String(order.request_group_id || ''),
         customerName: String(order.customer_name || ''),
@@ -299,6 +349,19 @@ function apiAdminListOrders(sessionToken) {
             occurredAt: String(payment.occurred_at || ''),
             notes: String(payment.notes || '')
           }
+        }),
+        cancellationRequests: (cancellationsByOrder[orderId] || []).map(function (request) {
+          return {
+            cancellationRequestId: String(request.cancellation_request_id),
+            requestGroupId: String(request.request_group_id),
+            reason: String(request.reason || ''),
+            status: String(request.status || ''),
+            reviewNote: String(request.review_note || ''),
+            createdAt: String(request.created_at || ''),
+            reviewedAt: String(request.reviewed_at || '')
+          }
+        }).sort(function (left, right) {
+          return String(right.createdAt).localeCompare(String(left.createdAt))
         })
       }
     }).sort(function (left, right) {
@@ -306,6 +369,13 @@ function apiAdminListOrders(sessionToken) {
     })
   })
 }
+
+function apiAdminReviewCancellationRequest(sessionToken, cancellationRequestId, decision, reviewNote) {
+  return safeApi_(function () {
+    return reviewCancellationRequestAsAdmin_(sessionToken, cancellationRequestId, decision, reviewNote)
+  })
+}
+
 
 function apiAdminUpdateOrderOptions(sessionToken, payload) {
   return safeApi_(function () {

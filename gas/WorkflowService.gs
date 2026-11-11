@@ -35,18 +35,20 @@ function updateRequestItemAsAdmin_(sessionToken, payload) {
       // A new search cycle invalidates the previous photo approval and releases
       // units that were only held for this request (never reserved by an order).
       var heldUnitIds = safeJsonParse_(request.unit_ids_json, [])
-      heldUnitIds.forEach(function (unitId) {
-        var unit = findRecord_('Units', 'unit_id', unitId)
-        if (unit && String(unit.status) === 'held' &&
-            String(unit.held_request_id) === requestId &&
-            !String(unit.reserved_order_id || '')) {
-          updateRecord_('Units', 'unit_id', unitId, {
-            status: 'available',
-            held_request_id: '',
-            updated_at: isoNow_()
-          })
+      var heldUnitSet = Object.create(null)
+      heldUnitIds.forEach(function (unitId) { heldUnitSet[String(unitId)] = true })
+      var heldUnitUpdates = readRecords_('Units').filter(function (unit) {
+        return heldUnitSet[String(unit.unit_id)] &&
+          String(unit.status) === 'held' &&
+          String(unit.held_request_id) === requestId &&
+          !String(unit.reserved_order_id || '')
+      }).map(function (unit) {
+        return {
+          id: unit.unit_id,
+          patch: { status: 'available', held_request_id: '', updated_at: isoNow_() }
         }
       })
+      if (heldUnitUpdates.length) updateRecordsById_('Units', 'unit_id', heldUnitUpdates)
       patch.customer_decision = ''
       patch.actual_photo_file_ids_json = '[]'
       patch.unit_ids_json = '[]'

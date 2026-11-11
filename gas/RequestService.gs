@@ -143,6 +143,10 @@ function customerRespondToItem_(accessToken, requestId, decision) {
   if (String(request.status) !== 'found') {
     throw publicError_('INVALID_STATE', 'Persetujuan hanya dapat diberikan setelah admin menemukan barang.')
   }
+  var photoIds = safeJsonParse_(request.actual_photo_file_ids_json, [])
+  if (!photoIds.length) {
+    throw publicError_('PHOTO_REQUIRED', 'Foto aktual belum tersedia untuk diperiksa.')
+  }
   var nextDecision = String(decision || '')
   if (['approved', 'rejected'].indexOf(nextDecision) === -1) {
     throw publicError_('INVALID_DECISION', 'Pilihan persetujuan tidak valid.')

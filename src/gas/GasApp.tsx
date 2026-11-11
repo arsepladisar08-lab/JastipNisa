@@ -1,0 +1,600 @@
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import {
+  addAdminUnit,
+  adminLogin,
+  assignAdminUnit,
+  confirmCustomerShopee,
+  createAdminOrder,
+  createRequest,
+  getAdminDashboard,
+  getCustomerPhoto,
+  getCustomerPortal,
+  getPublicCatalog,
+  getPublicConfig,
+  listAdminRequests,
+  logoutAdmin,
+  respondToRequestItem,
+  submitOrderDetails,
+  updateAdminRequestItem,
+  uploadAdminRequestPhoto,
+  type AdminDashboard,
+  type AdminRequestGroup,
+  type CatalogProduct,
+  type CatalogVariant,
+  type CustomerPortal,
+} from '../lib/gasClient'
+
+const ACCESS_TOKEN_KEY = 'jn.customer.access-token'
+const ADMIN_SESSION_KEY = 'jn.admin.session-token'
+
+function formatRupiah(value: number) {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+function calculateFee(count: number) {
+  if (count <= 0) return 0
+  if (count === 1) return 15000
+  return 25000 + (count - 2) * 10000
+}
+
+function createSecureToken() {
+  const bytes = new Uint8Array(32)
+  window.crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function displayStatus(status: string) {
+  const labels: Record<string, string> = {
+    new: 'Baru masuk',
+    searching: 'Sedang dicari',
+    found: 'Barang ditemukan',
+    not_found: 'Belum ditemukan',
+    partial_availability: 'Sebagian tersedia',
+    awaiting_customer_approval: 'Menunggu persetujuan',
+    customer_details_received: 'Format order diterima',
+    order_created: 'Pesanan dibuat',
+    confirmed: 'Pesanan dikonfirmasi',
+    packing: 'Sedang packing',
+    shipped: 'Dikirim',
+    completed: 'Selesai',
+    unpaid: 'Belum dibayar',
+    partially_paid: 'Pembayaran sebagian',
+    paid: 'Lunas',
+  }
+  return labels[status] || status.replaceAll('_', ' ')
+}
+
+function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="jn-app">
+      <header className="jn-header">
+        <Link to="/" className="jn-brand"><span className="jn-brand-mark">JN</span><span>JastipNisa<small>Personal shopping assistant</small></span></Link>
+        <nav>
+          <Link to="/">Beranda</Link>
+          <Link to="/portal">Lacak request</Link>
+          <Link to="/admin">Admin</Link>
+        </nav>
+      </header>
+      <main className="jn-main">{children}</main>
+      <footer className="jn-footer">JastipNisa · Katalog adalah referensi produk, bukan konfirmasi stok fisik.</footer>
+    </div>
+  )
+}
+
+type CartLine = { productId: string; variantId: string; quantity: number }
+
+function HomePage() {
+  const [products, setProducts] = useState<CatalogProduct[]>([])
+  const [variants, setVariants] = useState<CatalogVariant[]>([])
+  const [config, setConfig] = useState<Record<string, string>>({})
+  const [cart, setCart] = useState<CartLine[]>([])
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [created, setCreated] = useState<{ code: string; token: string } | null>(null)
+
+  useEffect(() => {
+    let active = true
+    Promise.all([getPublicCatalog(), getPublicConfig()])
+      .then(([catalog, publicConfig]) => {
+        if (!active) return
+        setProducts(catalog.products)
+        setVariants(catalog.variants)
+        setConfig(publicConfig)
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : 'Katalog belum dapat dimuat.')
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const totalQuantity = useMemo(() => cart.reduce((sum, line) => sum + line.quantity, 0), [cart])
+  const fee = useMemo(() => calculateFee(totalQuantity), [totalQuantity])
+
+  function updateCart(productId: string, variantId: string, quantity: number) {
+    setCart((current) => {
+      const next = current.filter((line) => line.productId !== productId || line.variantId !== variantId)
+      if (quantity > 0) next.push({ productId, variantId, quantity })
+      return next
+    })
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    if (!cart.length) {
+      setError('Tambahkan minimal satu produk ke daftar request.')
+      return
+    }
+    setSubmitting(true)
+    const accessToken = createSecureToken()
+    const submissionId = window.crypto.randomUUID()
+    try {
+      const result = await createRequest({
+        customerName: name.trim(),
+        phone: phone.trim(),
+        submissionId,
+        accessToken,
+        items: cart.map((line) => ({
+          productId: line.productId,
+          variantId: line.variantId || undefined,
+          quantity: line.quantity,
+        })),
+      })
+      sessionStorage.setItem(ACCESS_TOKEN_KEY, result.accessToken)
+      setCreated({ code: result.requestCode, token: result.accessToken })
+      setCart([])
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Request belum dapat dikirim.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <AppShell>
+      <section className="jn-hero">
+        <div className="jn-hero-copy">
+          <span className="jn-eyebrow">PERSONAL SHOPPING · FLICKA REFERENCE CATALOG</span>
+          <h1>Temukan yang kamu cari. <em>Biar kami bantu buru.</em></h1>
+          <p>Ajukan model dan warna yang kamu inginkan. Admin akan memeriksa ketersediaan, mengirim foto aktual, lalu membantu proses pesanan dan pengiriman.</p>
+          <div className="jn-hero-actions"><a href="#catalog" className="jn-button jn-button-primary">Lihat katalog</a><Link to="/portal" className="jn-button jn-button-quiet">Lacak request</Link></div>
+          <div className="jn-hero-note">{config.public_notice || 'Katalog merupakan referensi model. Ketersediaan dan kondisi barang dikonfirmasi admin.'}</div>
+        </div>
+        <div className="jn-hero-stamp"><span>JASTIP</span><strong>NISA</strong><small>curated finds, personal help</small></div>
+      </section>
+
+      <section className="jn-benefits">
+        <div><strong>01</strong><span>Ajukan wishlist</span><small>Pilih model, varian, dan jumlah.</small></div>
+        <div><strong>02</strong><span>Admin cek barang</span><small>Ketersediaan dan foto aktual.</small></div>
+        <div><strong>03</strong><span>Konfirmasi & proses</span><small>Isi detail dan pilih jalur checkout.</small></div>
+      </section>
+
+      <section className="jn-section" id="catalog">
+        <div className="jn-section-heading"><div><span className="jn-eyebrow">REFERENCE CATALOG</span><h2>Pilih wishlist kamu</h2><p>Harga di katalog resmi adalah referensi, bukan harga final JastipNisa.</p></div><span className="jn-count">{products.length} model</span></div>
+        {loading ? <div className="jn-state">Memuat katalog…</div> : error ? <div className="jn-alert jn-alert-error">{error}</div> : products.length === 0 ? <div className="jn-empty"><strong>Katalog belum tersedia.</strong><span>Admin perlu memasukkan model referensi yang sudah diperiksa ke database JastipNisa.</span></div> : (
+          <div className="jn-product-grid">
+            {products.map((product) => {
+              const choices = variants.filter((variant) => variant.productId === product.productId)
+              const selected = cart.find((line) => line.productId === product.productId)
+              return (
+                <article className="jn-product-card" key={product.productId}>
+                  {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading="lazy" /> : <div className="jn-product-placeholder">JASTIPNISA</div>}
+                  <div className="jn-product-body">
+                    <span className="jn-category">{product.category || 'Flicka bag'}</span>
+                    <h3>{product.name}</h3>
+                    <p className="jn-reference-price">Harga referensi {formatRupiah(product.referencePrice)}</p>
+                    {choices.length > 0 && <label className="jn-field">Varian
+                      <select value={selected?.variantId || ''} onChange={(event) => updateCart(product.productId, event.target.value, selected?.quantity || 0)}>
+                        <option value="">Pilih warna / varian</option>
+                        {choices.map((variant) => <option key={variant.variantId} value={variant.variantId}>{variant.name}</option>)}
+                      </select>
+                    </label>}
+                    <div className="jn-product-actions">
+                      <button type="button" className="jn-button jn-button-outline" disabled={choices.length > 0 && !selected?.variantId} onClick={() => updateCart(product.productId, selected?.variantId || '', (selected?.quantity || 0) + 1)}>
+                        {selected ? 'Ditambahkan (' + selected.quantity + ')' : 'Tambah wishlist'}
+                      </button>
+                      {product.officialUrl && <a href={product.officialUrl} target="_blank" rel="noreferrer" className="jn-text-link">Sumber resmi ↗</a>}
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="jn-section jn-request-section">
+        <div className="jn-section-heading"><div><span className="jn-eyebrow">REQUEST CART</span><h2>Daftar titipan</h2><p>Fee dihitung per jumlah unit dalam satu request group.</p></div></div>
+        {cart.length === 0 ? <div className="jn-empty"><strong>Wishlist kamu masih kosong.</strong><span>Tambahkan produk dari katalog untuk memulai request.</span></div> : (
+          <div className="jn-cart">
+            {cart.map((line) => {
+              const product = products.find((item) => item.productId === line.productId)
+              const variant = variants.find((item) => item.variantId === line.variantId)
+              return <div className="jn-cart-line" key={line.productId + line.variantId}>
+                <div><strong>{product?.name || 'Produk'}</strong><small>{variant?.name || 'Varian belum dipilih'}</small></div>
+                <div className="jn-quantity"><button type="button" onClick={() => updateCart(line.productId, line.variantId, line.quantity - 1)}>−</button><span>{line.quantity}</span><button type="button" onClick={() => updateCart(line.productId, line.variantId, line.quantity + 1)}>+</button></div>
+                <button type="button" className="jn-remove" onClick={() => updateCart(line.productId, line.variantId, 0)}>Hapus</button>
+              </div>
+            })}
+            <div className="jn-fee-preview"><span>{totalQuantity} produk</span><strong>Estimasi fee {formatRupiah(fee)}</strong></div>
+          </div>
+        )}
+        <form className="jn-form jn-request-form" onSubmit={handleSubmit}>
+          <div className="jn-form-grid">
+            <label className="jn-field">Nama pemesan<input required minLength={2} maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="Nama lengkap" /></label>
+            <label className="jn-field">Nomor WhatsApp<input required minLength={8} maxLength={30} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="08xxxxxxxxxx" /></label>
+          </div>
+          {error && <div className="jn-alert jn-alert-error">{error}</div>}
+          <button className="jn-button jn-button-primary" type="submit" disabled={submitting || cart.length === 0}>{submitting ? 'Mengirim request…' : 'Kirim request wishlist'}</button>
+        </form>
+        {created && <div className="jn-created">
+          <span className="jn-eyebrow">REQUEST TERCATAT</span><h3>{created.code}</h3>
+          <p>Simpan token berikut. Token ini adalah kunci untuk membuka status request kamu dan tidak akan ditampilkan lagi setelah sesi browser berakhir.</p>
+          <code>{created.token}</code>
+          <button type="button" className="jn-button jn-button-outline" onClick={() => void navigator.clipboard?.writeText(created.token)}>Salin token akses</button>
+          <Link className="jn-button jn-button-primary" to="/portal">Lihat status request</Link>
+        </div>}
+      </section>
+    </AppShell>
+  )
+}
+
+function PortalPage() {
+  const [tokenInput, setTokenInput] = useState(() => sessionStorage.getItem(ACCESS_TOKEN_KEY) || '')
+  const [activeToken, setActiveToken] = useState('')
+  const [portal, setPortal] = useState<CustomerPortal | null>(null)
+  const [photos, setPhotos] = useState<Record<string, string[]>>({})
+  const [loading, setLoading] = useState(false)
+  const [busyItem, setBusyItem] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [address, setAddress] = useState('')
+  const [shopeeUsername, setShopeeUsername] = useState('')
+
+  const refresh = useCallback(async (token: string) => {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await getCustomerPortal(token)
+      setPortal(data)
+      const photoEntries = await Promise.all(data.items.filter((item) => item.photoCount > 0).map(async (item) => {
+        const loaded = await Promise.all(Array.from({ length: item.photoCount }, async (_value, index) => {
+          const photo = await getCustomerPhoto(token, item.requestId, index)
+          return 'data:' + photo.mimeType + ';base64,' + photo.base64
+        }))
+        return [item.requestId, loaded] as const
+      }))
+      setPhotos(Object.fromEntries(photoEntries))
+    } catch (reason) {
+      setPortal(null)
+      setPhotos({})
+      setError(reason instanceof Error ? reason.message : 'Status request belum dapat dimuat.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem(ACCESS_TOKEN_KEY)
+    if (saved) {
+      setTokenInput(saved)
+      setActiveToken(saved)
+      void refresh(saved)
+    }
+  }, [refresh])
+
+  function openPortal(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const token = tokenInput.trim()
+    if (!token) return
+    sessionStorage.setItem(ACCESS_TOKEN_KEY, token)
+    setActiveToken(token)
+    setNotice('')
+    void refresh(token)
+  }
+
+  async function decide(requestId: string, decision: 'approved' | 'rejected') {
+    setBusyItem(requestId)
+    setError('')
+    try {
+      await respondToRequestItem(activeToken, requestId, decision)
+      setNotice(decision === 'approved' ? 'Persetujuan foto berhasil dicatat.' : 'Penolakan foto berhasil dicatat. Admin akan meninjau tindak lanjutnya.')
+      await refresh(activeToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Keputusan belum dapat disimpan.')
+    } finally {
+      setBusyItem('')
+    }
+  }
+
+  async function submitDetails(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    try {
+      await submitOrderDetails(activeToken, { name, phone, address })
+      setNotice('Format order berhasil dikirim ke admin.')
+      await refresh(activeToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Format order belum dapat disimpan.')
+    }
+  }
+
+  async function submitShopee(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    try {
+      await confirmCustomerShopee(activeToken, shopeeUsername)
+      setNotice('Nama akun Shopee berhasil dikonfirmasi.')
+      await refresh(activeToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Konfirmasi Shopee belum dapat disimpan.')
+    }
+  }
+
+  const canSubmitDetails = Boolean(portal?.items.length) && portal!.items.every((item) =>
+    item.status === 'found' && item.customerDecision === 'approved',
+  )
+
+  return (
+    <AppShell>
+      <section className="jn-page-heading"><span className="jn-eyebrow">CUSTOMER PORTAL</span><h1>Lacak request kamu</h1><p>Masukkan token akses yang diberikan setelah request berhasil dikirim. Jangan bagikan token ini kepada orang lain.</p></section>
+      <form className="jn-form jn-token-form" onSubmit={openPortal}>
+        <label className="jn-field">Token akses<input required value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} placeholder="Tempel token akses di sini" /></label>
+        <button className="jn-button jn-button-primary" disabled={loading}>{loading ? 'Memuat…' : 'Buka status request'}</button>
+      </form>
+      {error && <div className="jn-alert jn-alert-error">{error}</div>}
+      {notice && <div className="jn-alert jn-alert-success">{notice}</div>}
+      {portal && <section className="jn-panel jn-portal-card">
+        <div className="jn-panel-heading"><div><span className="jn-eyebrow">REQUEST CODE</span><h2>{portal.requestCode}</h2></div><span className="jn-status">{displayStatus(portal.status)}</span></div>
+        <p className="jn-muted">Dibuat {new Date(portal.createdAt).toLocaleString('id-ID')}</p>
+        <div className="jn-portal-items">
+          {portal.items.map((item) => <article className="jn-portal-item" key={item.requestId}>
+            <div className="jn-portal-item-head"><div><strong>{item.productName}</strong><small>{item.variantName || 'Varian tidak ditentukan'} · {item.quantity} pcs</small></div><span className="jn-status">{displayStatus(item.status)}</span></div>
+            {item.actualCondition && <p className="jn-condition">{item.actualCondition}</p>}
+            {photos[item.requestId]?.length > 0 && <div className="jn-photo-grid">{photos[item.requestId].map((src, index) => <img key={index} src={src} alt={'Foto aktual ' + item.productName + ' ' + (index + 1)} />)}</div>}
+            {item.status === 'found' && !item.customerDecision && <div className="jn-inline-actions"><button type="button" disabled={busyItem === item.requestId} className="jn-button jn-button-primary" onClick={() => void decide(item.requestId, 'approved')}>Setujui barang</button><button type="button" disabled={busyItem === item.requestId} className="jn-button jn-button-outline" onClick={() => void decide(item.requestId, 'rejected')}>Belum setuju</button></div>}
+            {item.customerDecision && <p className="jn-muted">Keputusan kamu: {item.customerDecision === 'approved' ? 'Disetujui' : 'Belum disetujui'}</p>}
+          </article>)}
+        </div>
+        {canSubmitDetails && !portal.order && <form className="jn-form jn-customer-details" onSubmit={submitDetails}>
+          <div><span className="jn-eyebrow">FINAL ORDER DETAILS</span><h3>Lengkapi format order</h3><p>Seluruh foto aktual telah disetujui. Isi data pengiriman agar admin dapat membuat pesanan final.</p></div>
+          <label className="jn-field">Nama lengkap<input required value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <label className="jn-field">Nomor WhatsApp<input required value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
+          <label className="jn-field">Alamat lengkap<textarea required rows={3} value={address} onChange={(event) => setAddress(event.target.value)} /></label>
+          <button className="jn-button jn-button-primary">Kirim format order</button>
+        </form>}
+        {portal.order && <div className="jn-order-summary"><span className="jn-eyebrow">FINAL ORDER</span><h3>{portal.order.orderCode}</h3><p>Status: {displayStatus(portal.order.status)}</p><strong>{formatRupiah(portal.order.totalAmount)}</strong>{portal.order.courier && <p>{portal.order.courier} · {portal.order.trackingNumber}</p>}
+          {portal.order.shopeeCheckoutUrl && <form className="jn-form" onSubmit={submitShopee}><label className="jn-field">Nama akun Shopee<input required value={shopeeUsername} onChange={(event) => setShopeeUsername(event.target.value)} /></label><button className="jn-button jn-button-primary">Konfirmasi akun Shopee</button></form>}
+        </div>}
+      </section>}
+    </AppShell>
+  )
+}
+
+function AdminLoginPage() {
+  const navigate = useNavigate()
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const result = await adminLogin(password)
+      sessionStorage.setItem(ADMIN_SESSION_KEY, result.sessionToken)
+      navigate('/admin', { replace: true })
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Login gagal.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <AppShell><section className="jn-login-wrap"><div className="jn-login-card"><span className="jn-eyebrow">PRIVATE WORKSPACE</span><h1>Admin JastipNisa</h1><p>Masuk menggunakan password admin yang sudah diatur pada Apps Script.</p><form className="jn-form" onSubmit={submit}><label className="jn-field">Password admin<input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error && <div className="jn-alert jn-alert-error">{error}</div>}<button className="jn-button jn-button-primary" disabled={busy}>{busy ? 'Memeriksa…' : 'Masuk workspace'}</button></form></div></section></AppShell>
+}
+
+function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      const separator = result.indexOf(',')
+      if (separator < 0) reject(new Error('File foto tidak dapat dibaca.'))
+      else resolve(result.slice(separator + 1))
+    }
+    reader.onerror = () => reject(new Error('File foto gagal dibaca.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function AdminPage() {
+  const navigate = useNavigate()
+  const [sessionToken, setSessionToken] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) || '')
+  const [dashboard, setDashboard] = useState<AdminDashboard | null>(null)
+  const [groups, setGroups] = useState<AdminRequestGroup[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  const refresh = useCallback(async (token: string) => {
+    setLoading(true)
+    setError('')
+    try {
+      const [stats, requests] = await Promise.all([
+        getAdminDashboard(token),
+        listAdminRequests(token, 'all'),
+      ])
+      setDashboard(stats)
+      setGroups(requests)
+    } catch (reason) {
+      sessionStorage.removeItem(ADMIN_SESSION_KEY)
+      setSessionToken('')
+      setError(reason instanceof Error ? reason.message : 'Workspace belum dapat dimuat.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (sessionToken) void refresh(sessionToken)
+  }, [sessionToken, refresh])
+
+  async function signOut() {
+    try { await logoutAdmin(sessionToken) } catch { /* clear the local token even if the server session already expired */ }
+    sessionStorage.removeItem(ADMIN_SESSION_KEY)
+    setSessionToken('')
+    navigate('/admin/login', { replace: true })
+  }
+
+  if (!sessionToken) return <Navigate to="/admin/login" replace />
+
+  async function updateItem(requestId: string, status: 'new' | 'searching' | 'found' | 'not_found', actualCondition: string) {
+    setError('')
+    try {
+      await updateAdminRequestItem(sessionToken, { requestId, status, actualCondition })
+      setNotice('Status request berhasil diperbarui.')
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Status tidak dapat disimpan.')
+    }
+  }
+
+  async function uploadPhoto(requestId: string, file?: File) {
+    if (!file) return
+    setError('')
+    if (file.size > 700000 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setError('Gunakan foto JPG, PNG, atau WebP maksimal 700 KB.')
+      return
+    }
+    try {
+      const base64 = await fileToBase64(file)
+      await uploadAdminRequestPhoto(sessionToken, { requestId, fileName: file.name, mimeType: file.type, base64 })
+      setNotice('Foto aktual berhasil diunggah ke Drive privat.')
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Upload foto gagal.')
+    }
+  }
+
+  async function addAndAssignUnit(item: AdminRequestGroup['items'][number], form: HTMLFormElement) {
+    const values = new FormData(form)
+    const unitCode = String(values.get('unitCode') || '').trim()
+    const purchasePrice = Number(values.get('purchasePrice') || 0)
+    const sellingPrice = Number(values.get('sellingPrice') || 0)
+    if (!unitCode || sellingPrice <= 0) {
+      setError('Kode unit dan harga jual final harus diisi.')
+      return
+    }
+    try {
+      const created = await addAdminUnit(sessionToken, {
+        unitCode,
+        productId: item.productId,
+        variantId: item.variantId || undefined,
+        purchasePrice,
+        sellingPrice,
+      })
+      const assigned = await assignAdminUnit(sessionToken, item.requestId, created.unitId)
+      setNotice('Unit ditambahkan dan dialokasikan (' + assigned.assignedCount + '/' + assigned.requiredCount + ').')
+      form.reset()
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unit belum dapat dialokasikan.')
+    }
+  }
+
+  async function makeFinalOrder(groupId: string) {
+    try {
+      const order = await createAdminOrder(sessionToken, groupId)
+      setNotice('Pesanan ' + order.orderCode + ' berhasil dibuat. Fee ' + formatRupiah(order.fee) + '.')
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Order final belum dapat dibuat.')
+    }
+  }
+
+  return <AppShell>
+    <div className="jn-admin-top"><div><span className="jn-eyebrow">OPERATIONS</span><h1>Admin workspace</h1><p>Kelola request, pencarian barang, unit fisik dan pesanan.</p></div><button type="button" className="jn-button jn-button-outline" onClick={() => void signOut()}>Keluar</button></div>
+    {error && <div className="jn-alert jn-alert-error">{error}</div>}
+    {notice && <div className="jn-alert jn-alert-success">{notice}</div>}
+    {dashboard && <div className="jn-stat-grid">
+      <div><span>Request aktif</span><strong>{dashboard.requestGroups}</strong></div>
+      <div><span>Sedang dicari</span><strong>{dashboard.itemsSearching}</strong></div>
+      <div><span>Barang ditemukan</span><strong>{dashboard.itemsFound}</strong></div>
+      <div><span>Unit tersedia</span><strong>{dashboard.unitsAvailable}</strong></div>
+      <div><span>Order aktif</span><strong>{dashboard.activeOrders}</strong></div>
+      <div><span>Pembayaran perlu dicek</span><strong>{dashboard.paymentsAwaitingVerification}</strong></div>
+    </div>}
+    <section className="jn-section jn-admin-requests"><div className="jn-section-heading"><div><span className="jn-eyebrow">CUSTOMER REQUESTS</span><h2>Daftar request</h2><p>Periksa item, perbarui status pencarian, dan catat unit aktual.</p></div><button className="jn-button jn-button-outline" onClick={() => void refresh(sessionToken)}>Refresh</button></div>
+      {loading && <div className="jn-state">Memuat data operasional…</div>}
+      {!loading && groups.length === 0 && <div className="jn-empty"><strong>Belum ada request.</strong><span>Request pelanggan yang masuk akan muncul di sini.</span></div>}
+      <div className="jn-admin-list">
+        {groups.map((group) => <article className="jn-admin-group" key={group.requestGroupId}>
+          <div className="jn-admin-group-head"><div><span className="jn-eyebrow">{group.requestCode}</span><h3>{group.customerName}</h3><small>{group.customerPhone} · {new Date(group.createdAt).toLocaleString('id-ID')}</small></div><span className="jn-status">{displayStatus(group.status)}</span></div>
+          {group.items.map((item) => <RequestEditor key={item.requestId} item={item} onUpdate={updateItem} onUpload={uploadPhoto} onAddUnit={addAndAssignUnit} />)}
+          {group.status === 'customer_details_received' && <div className="jn-finalize"><p>Data final pelanggan sudah diterima. Pastikan seluruh unit teralokasi dan harga final telah terisi.</p><button className="jn-button jn-button-primary" onClick={() => void makeFinalOrder(group.requestGroupId)}>Buat pesanan final</button></div>}
+        </article>)}
+      </div>
+    </section>
+  </AppShell>
+}
+
+function RequestEditor({
+  item,
+  onUpdate,
+  onUpload,
+  onAddUnit,
+}: {
+  item: AdminRequestGroup['items'][number]
+  onUpdate: (requestId: string, status: 'new' | 'searching' | 'found' | 'not_found', condition: string) => Promise<void>
+  onUpload: (requestId: string, file?: File) => Promise<void>
+  onAddUnit: (item: AdminRequestGroup['items'][number], form: HTMLFormElement) => Promise<void>
+}) {
+  const [status, setStatus] = useState(item.status as 'new' | 'searching' | 'found' | 'not_found')
+  const [condition, setCondition] = useState(item.actualCondition)
+  return <div className="jn-admin-item">
+    <div className="jn-admin-item-title"><div><strong>{item.productName}</strong><small>{item.variantName || 'Varian bebas'} · {item.quantity} pcs</small></div><span className="jn-status">{displayStatus(item.status)}</span></div>
+    <div className="jn-admin-fields">
+      <label className="jn-field">Status pencarian<select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}><option value="new">Baru</option><option value="searching">Sedang dicari</option><option value="found">Ditemukan</option><option value="not_found">Tidak ditemukan</option></select></label>
+      <label className="jn-field">Kondisi / catatan admin<textarea rows={2} value={condition} onChange={(event) => setCondition(event.target.value)} placeholder="Catat kondisi aktual produk…" /></label>
+      <button className="jn-button jn-button-outline" onClick={() => void onUpdate(item.requestId, status, condition)}>Simpan status</button>
+    </div>
+    {item.status === 'found' && <div className="jn-admin-fields">
+      <label className="jn-field">Upload foto aktual<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void onUpload(item.requestId, event.currentTarget.files?.[0])} /></label>
+      <small>File disimpan di folder Drive privat. Pelanggan yang memiliki token request ini dapat melihat foto.</small>
+      <form className="jn-unit-form" onSubmit={(event) => { event.preventDefault(); void onAddUnit(item, event.currentTarget) }}>
+        <strong>Daftarkan dan alokasikan unit fisik</strong>
+        <input name="unitCode" required placeholder="Kode unit internal" />
+        <input name="purchasePrice" type="number" min="0" placeholder="Harga beli aktual (Rp)" />
+        <input name="sellingPrice" type="number" min="1" required placeholder="Harga final pelanggan (Rp)" />
+        <button className="jn-button jn-button-primary">Tambah & alokasikan unit</button>
+        <small>Unit {item.assignedUnitCount}/{item.quantity} sudah dialokasikan.</small>
+      </form>
+    </div>}
+    {item.customerDecision && <small>Keputusan pelanggan: {item.customerDecision === 'approved' ? 'disetujui' : 'belum disetujui'}</small>}
+  </div>
+}
+
+function AppRoutes() {
+  return <Routes>
+    <Route path="/" element={<HomePage />} />
+    <Route path="/portal" element={<PortalPage />} />
+    <Route path="/admin" element={<AdminPage />} />
+    <Route path="/admin/login" element={<AdminLoginPage />} />
+    <Route path="*" element={<Navigate to="/" replace />} />
+  </Routes>
+}
+
+export default function GasApp() {
+  return <AppRoutes />
+}

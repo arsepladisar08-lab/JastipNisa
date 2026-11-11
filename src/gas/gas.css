@@ -147,3 +147,7 @@ a{color:inherit;text-decoration:none}
 .jn-payment-form>strong,.jn-payment-form>small,.jn-payment-form>button{grid-column:1/-1}
 .jn-payment-form .jn-field input,.jn-payment-form .jn-field select{font-size:10px}
 @media(max-width:760px){.jn-payment-form{grid-template-columns:1fr}.jn-payment-form>strong,.jn-payment-form>small,.jn-payment-form>button{grid-column:auto}}
+
+.jn-payment-proof-preview{grid-column:1/-1;padding:9px;border-radius:9px;background:#f6f5f0}
+.jn-payment-proof-preview img{display:block;max-width:min(100%,420px);max-height:360px;object-fit:contain;border-radius:7px}
+.jn-payment-proof-preview a{font-size:10px;color:#52664f;text-decoration:underline}

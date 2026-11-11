@@ -79,7 +79,7 @@ export function gasCall<T>(method: string, ...args: unknown[]): Promise<T> {
     }
 
     try {
-      ;(serverMethod as (...parameters: unknown[]) => void)(...args)
+      ;(serverMethod as (...parameters: unknown[]) => void).apply(runner, args)
     } catch (error) {
       settled = true
       reject(error instanceof Error ? error : new Error('Gagal memanggil Apps Script.'))

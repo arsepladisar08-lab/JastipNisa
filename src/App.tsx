@@ -35,7 +35,7 @@ function PublicHeader() {
               {link.label}
             </NavLink>
           ))}
-{gasWebAppUrl ? (
+          {gasWebAppUrl ? (
             <a href={gasWebAppUrl} target="_blank" rel="noopener noreferrer" className="button button-dark nav-cta" onClick={() => setOpen(false)}>
               Mulai Request <ArrowUpRight size={15} />
             </a>

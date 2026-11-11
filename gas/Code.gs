@@ -258,7 +258,8 @@ function apiAdminListOrders(sessionToken) {
             method: String(payment.method || ''),
             verificationStatus: String(payment.verification_status || ''),
             hasProof: Boolean(payment.proof_file_id),
-            occurredAt: String(payment.occurred_at || '')
+            occurredAt: String(payment.occurred_at || ''),
+            notes: String(payment.notes || '')
           }
         })
       }
@@ -271,6 +272,80 @@ function apiAdminListOrders(sessionToken) {
 function apiAdminUpdateOrderOptions(sessionToken, payload) {
   return safeApi_(function () {
     return updateOrderOptionsAsAdmin_(sessionToken, payload)
+  })
+}
+
+function apiAdminListExpenses(sessionToken) {
+  return safeApi_(function () {
+    requireAdmin_(sessionToken)
+    return readRecords_('Expenses').map(function (row) {
+      return {
+        expenseId: String(row.expense_id),
+        occurredAt: String(row.occurred_at || ''),
+        category: String(row.category || ''),
+        description: String(row.description || ''),
+        amount: Number(row.amount || 0),
+        orderId: String(row.order_id || '')
+      }
+    }).sort(function (left, right) {
+      return String(right.occurredAt).localeCompare(String(left.occurredAt))
+    })
+  })
+}
+
+function apiAdminGetFinancialSummary(sessionToken) {
+  return safeApi_(function () {
+    requireAdmin_(sessionToken)
+    var orders = readRecords_('Orders').filter(function (row) {
+      return ['creating', 'cancelled'].indexOf(String(row.status)) === -1
+    })
+    var payments = readRecords_('Payments').filter(function (row) {
+      return String(row.verification_status) === 'verified'
+    })
+    var expenses = readRecords_('Expenses')
+    var units = readRecords_('Units')
+
+    var bankAndCash = payments.filter(function (row) {
+      return String(row.type) !== 'shopee' && String(row.type) !== 'refund'
+    }).reduce(function (sum, row) { return sum + Number(row.amount || 0) }, 0)
+    var shopee = payments.filter(function (row) {
+      return String(row.type) === 'shopee'
+    }).reduce(function (sum, row) { return sum + Number(row.amount || 0) }, 0)
+    var refunds = payments.filter(function (row) {
+      return String(row.type) === 'refund'
+    }).reduce(function (sum, row) { return sum + Number(row.amount || 0) }, 0)
+    var feeBilled = orders.reduce(function (sum, row) {
+      return sum + Number(row.jastip_fee || 0)
+    }, 0)
+    var outstanding = 0
+    orders.forEach(function (order) {
+      var paid = payments.filter(function (payment) {
+        return String(payment.order_id) === String(order.order_id)
+      }).reduce(function (sum, payment) {
+        var amount = Number(payment.amount || 0)
+        return sum + (String(payment.type) === 'refund' ? -amount : amount)
+      }, 0)
+      outstanding += Math.max(0, Number(order.total_amount || 0) - paid)
+    })
+    var expensesTotal = expenses.reduce(function (sum, row) {
+      return sum + Number(row.amount || 0)
+    }, 0)
+    var inventoryCost = units.filter(function (unit) {
+      return ['reserved', 'packed', 'shipped', 'completed'].indexOf(String(unit.status)) !== -1
+    }).reduce(function (sum, unit) {
+      return sum + Number(unit.purchase_price || 0)
+    }, 0)
+
+    return {
+      ordersCount: orders.length,
+      feeBilled: feeBilled,
+      verifiedBankAndCash: bankAndCash,
+      verifiedShopeePayments: shopee,
+      verifiedRefunds: refunds,
+      outstandingBalances: outstanding,
+      recordedExpenses: expensesTotal,
+      allocatedUnitPurchaseCost: inventoryCost
+    }
   })
 }
 

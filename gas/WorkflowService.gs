@@ -25,9 +25,24 @@ function updateRequestItemAsAdmin_(sessionToken, payload) {
       updated_at: isoNow_()
     }
     if (current === 'found' && nextStatus === 'searching') {
-      // A new search cycle invalidates the previous photo approval.
+      // A new search cycle invalidates the previous photo approval and releases
+      // units that were only held for this request (never reserved by an order).
+      var heldUnitIds = safeJsonParse_(request.unit_ids_json, [])
+      heldUnitIds.forEach(function (unitId) {
+        var unit = findRecord_('Units', 'unit_id', unitId)
+        if (unit && String(unit.status) === 'held' &&
+            String(unit.held_request_id) === requestId &&
+            !String(unit.reserved_order_id || '')) {
+          updateRecord_('Units', 'unit_id', unitId, {
+            status: 'available',
+            held_request_id: '',
+            updated_at: isoNow_()
+          })
+        }
+      })
       patch.customer_decision = ''
       patch.actual_photo_file_ids_json = '[]'
+      patch.unit_ids_json = '[]'
     }
     updateRecord_('Requests', 'request_id', requestId, patch)
 

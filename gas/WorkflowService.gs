@@ -136,6 +136,27 @@ function createOrderAsAdmin_(sessionToken, requestGroupId) {
   return withScriptLock_(function () {
     var group = findRecord_('Request_Groups', 'request_group_id', requestGroupId)
     if (!group) throw publicError_('NOT_FOUND', 'Request pelanggan tidak ditemukan.')
+
+    // Recover an interrupted multi-sheet write instead of creating a second order.
+    var existingOrder = group.order_id
+      ? findRecord_('Orders', 'order_id', group.order_id)
+      : readRecords_('Orders').filter(function (row) {
+          return String(row.request_group_id) === String(requestGroupId)
+        })[0]
+    if (existingOrder) {
+      if (!group.order_id) {
+        updateRecord_('Request_Groups', 'request_group_id', requestGroupId, {
+          order_id: existingOrder.order_id,
+          status: String(existingOrder.status) === 'creating' ? 'order_creating' : 'order_created',
+          updated_at: isoNow_()
+        })
+      }
+      if (String(existingOrder.status) === 'creating') {
+        return recoverOrderCreation_(session, requestGroupId, existingOrder)
+      }
+      return orderSummary_(existingOrder, true)
+    }
+
     if (String(group.status) !== 'customer_details_received') {
       throw publicError_('INVALID_STATE', 'Pesanan hanya dapat dibuat setelah pelanggan mengirim format order.')
     }
@@ -143,6 +164,18 @@ function createOrderAsAdmin_(sessionToken, requestGroupId) {
     if (!buyer || !buyer.name || !buyer.phone || !buyer.address) {
       throw publicError_('CUSTOMER_DETAILS_INCOMPLETE', 'Data pelanggan belum lengkap.')
     }
+
+    // Deposit policy amount is intentionally not fixed. At least one positive,
+    // admin-verified deposit must exist before the final order can be created.
+    var verifiedDeposit = readRecords_('Payments').filter(function (payment) {
+      return String(payment.request_group_id) === String(requestGroupId) &&
+        String(payment.type) === 'deposit' &&
+        String(payment.verification_status) === 'verified'
+    }).reduce(function (sum, payment) { return sum + Number(payment.amount || 0) }, 0)
+    if (verifiedDeposit <= 0) {
+      throw publicError_('VERIFIED_DEPOSIT_REQUIRED', 'Catat dan verifikasi deposit pelanggan terlebih dahulu. Nominal minimum deposit mengikuti kesepakatan admin dengan pelanggan.')
+    }
+
     var requestItems = readRecords_('Requests').filter(function (row) {
       return String(row.request_group_id) === String(requestGroupId)
     })
@@ -183,7 +216,10 @@ function createOrderAsAdmin_(sessionToken, requestGroupId) {
     var orderCode = makeRequestCode_().replace('JN-', 'JNO-')
     var fee = calculateJastipFee_(productCount)
     var total = subtotal + fee
-    appendRecords_('Orders', [{
+
+    // Google Sheets has no cross-sheet transaction. Persist a recoverable draft
+    // pointer before writing child rows; retries resume the draft idempotently.
+    var draftOrder = {
       order_id: orderId,
       order_code: orderCode,
       request_group_id: requestGroupId,
@@ -199,7 +235,7 @@ function createOrderAsAdmin_(sessionToken, requestGroupId) {
       shipping_fee: 0,
       discount: 0,
       total_amount: total,
-      status: 'confirmed',
+      status: 'creating',
       payment_status: 'unpaid',
       courier: '',
       tracking_number: '',
@@ -207,58 +243,121 @@ function createOrderAsAdmin_(sessionToken, requestGroupId) {
       delivered_at: '',
       created_at: now,
       updated_at: now
-    }])
-
-    appendRecords_('Order_Items', allocated.map(function (entry) {
-      return {
-        order_item_id: newId_(),
-        order_id: orderId,
-        request_id: entry.request.request_id,
-        unit_id: entry.unit.unit_id,
-        product_id: entry.request.product_id,
-        variant_id: entry.request.variant_id,
-        product_name_snapshot: entry.request.product_name_snapshot,
-        variant_name_snapshot: entry.request.variant_name_snapshot,
-        quantity: 1,
-        unit_price: entry.price,
-        status: 'reserved',
-        created_at: now
-      }
-    }))
-
-    allocated.forEach(function (entry) {
-      updateRecord_('Units', 'unit_id', entry.unit.unit_id, {
-        status: 'reserved',
-        held_request_id: '',
-        reserved_order_id: orderId,
-        updated_at: now
-      })
-    })
-    requestItems.forEach(function (request) {
-      updateRecord_('Requests', 'request_id', request.request_id, {
-        status: 'ordered',
-        updated_at: now
-      })
-    })
+    }
+    appendRecords_('Orders', [draftOrder])
     updateRecord_('Request_Groups', 'request_group_id', requestGroupId, {
-      status: 'order_created',
+      order_id: orderId,
+      status: 'order_creating',
       updated_at: now
     })
-
-    readRecords_('Payments').filter(function (payment) {
-      return String(payment.request_group_id) === String(requestGroupId) &&
-        !payment.order_id && String(payment.verification_status) === 'verified'
-    }).forEach(function (payment) {
-      updateRecord_('Payments', 'payment_id', payment.payment_id, { order_id: orderId })
-    })
-    recalculateOrderPaymentStatus_(orderId)
-    appendAudit_('admin', session.role, 'order_created', 'order', orderId, {
+    appendAudit_('admin', session.role, 'order_creation_started', 'order', orderId, {
       requestGroupId: requestGroupId,
-      productCount: productCount,
-      fee: fee
+      productCount: productCount
     })
-    return { orderId: orderId, orderCode: orderCode, productCount: productCount, subtotal: subtotal, fee: fee, total: total }
+    return recoverOrderCreation_(session, requestGroupId, draftOrder)
   })
+}
+
+function orderSummary_(order, reused) {
+  return {
+    orderId: String(order.order_id),
+    orderCode: String(order.order_code),
+    productCount: Number(order.product_count || 0),
+    subtotal: Number(order.product_subtotal || 0),
+    fee: Number(order.jastip_fee || 0),
+    total: Number(order.total_amount || 0),
+    reused: Boolean(reused)
+  }
+}
+
+function recoverOrderCreation_(session, requestGroupId, draftOrder) {
+  var orderId = String(draftOrder.order_id)
+  var requestItems = readRecords_('Requests').filter(function (row) {
+    return String(row.request_group_id) === String(requestGroupId)
+  })
+  var existingItems = readRecords_('Order_Items').filter(function (row) {
+    return String(row.order_id) === orderId
+  })
+  var newItems = []
+  requestItems.forEach(function (request) {
+    var unitIds = safeJsonParse_(request.unit_ids_json, [])
+    if (unitIds.length !== Number(request.quantity)) {
+      throw publicError_('ORDER_RECOVERY_REQUIRED', 'Jumlah unit request berubah saat pemulihan order. Periksa data order sebelum melanjutkan.')
+    }
+    unitIds.forEach(function (unitId) {
+      var itemExists = existingItems.some(function (item) {
+        return String(item.unit_id) === String(unitId)
+      })
+      var unit = findRecord_('Units', 'unit_id', unitId)
+      if (!unit || String(unit.product_id) !== String(request.product_id) ||
+          (String(request.variant_id || '') && String(unit.variant_id || '') !== String(request.variant_id))) {
+        throw publicError_('ORDER_RECOVERY_REQUIRED', 'Unit tidak lagi cocok dengan request. Perlu rekonsiliasi admin.')
+      }
+      if (String(unit.reserved_order_id || '') !== orderId) {
+        if (String(unit.status) !== 'held' || String(unit.held_request_id) !== String(request.request_id)) {
+          throw publicError_('ORDER_RECOVERY_REQUIRED', 'Unit sudah berubah status. Perlu rekonsiliasi admin sebelum order dilanjutkan.')
+        }
+      }
+      if (!itemExists) {
+        newItems.push({
+          order_item_id: newId_(),
+          order_id: orderId,
+          request_id: request.request_id,
+          unit_id: unit.unit_id,
+          product_id: request.product_id,
+          variant_id: request.variant_id,
+          product_name_snapshot: request.product_name_snapshot,
+          variant_name_snapshot: request.variant_name_snapshot,
+          quantity: 1,
+          unit_price: Number(unit.selling_price),
+          status: 'reserved',
+          created_at: isoNow_()
+        })
+      }
+    })
+  })
+
+  if (newItems.length) appendRecords_('Order_Items', newItems)
+
+  requestItems.forEach(function (request) {
+    safeJsonParse_(request.unit_ids_json, []).forEach(function (unitId) {
+      var unit = findRecord_('Units', 'unit_id', unitId)
+      if (String(unit.reserved_order_id || '') !== orderId) {
+        updateRecord_('Units', 'unit_id', unitId, {
+          status: 'reserved',
+          held_request_id: '',
+          reserved_order_id: orderId,
+          updated_at: isoNow_()
+        })
+      }
+    })
+    updateRecord_('Requests', 'request_id', request.request_id, {
+      status: 'ordered',
+      updated_at: isoNow_()
+    })
+  })
+
+  readRecords_('Payments').filter(function (payment) {
+    return String(payment.request_group_id) === String(requestGroupId) &&
+      !payment.order_id && String(payment.verification_status) === 'verified'
+  }).forEach(function (payment) {
+    updateRecord_('Payments', 'payment_id', payment.payment_id, { order_id: orderId })
+  })
+
+  updateRecord_('Orders', 'order_id', orderId, {
+    status: 'confirmed',
+    updated_at: isoNow_()
+  })
+  updateRecord_('Request_Groups', 'request_group_id', requestGroupId, {
+    order_id: orderId,
+    status: 'order_created',
+    updated_at: isoNow_()
+  })
+  recalculateOrderPaymentStatus_(orderId)
+  appendAudit_('admin', session.role, 'order_creation_recovered', 'order', orderId, {
+    requestGroupId: requestGroupId
+  })
+  return orderSummary_(findRecord_('Orders', 'order_id', orderId), false)
 }
 
 function recalculateOrderPaymentStatus_(orderId) {

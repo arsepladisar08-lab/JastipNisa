@@ -45,6 +45,8 @@ function apiHealth() {
 }
 
 function safeApi_(callback) {
+  // Bound the read snapshot to one API invocation, including read-only calls.
+  resetDatabaseExecutionCache_()
   try {
     return { ok: true, data: callback(), error: null }
   } catch (error) {
@@ -54,6 +56,8 @@ function safeApi_(callback) {
       : 'Permintaan belum dapat diproses. Periksa data atau coba kembali.'
     console.error('JastipNisa API error [' + code + ']: ' + String(error && error.message || error))
     return { ok: false, data: null, error: { code: code, message: message } }
+  } finally {
+    resetDatabaseExecutionCache_()
   }
 }
 
@@ -118,6 +122,28 @@ function apiCustomerGetPortal(accessToken) {
     var order = readRecords_('Orders').filter(function (row) {
       return String(row.request_group_id) === String(group.request_group_id)
     })[0] || null
+    var cancellationRows = readRecords_('Cancellation_Requests').filter(function (row) {
+      return String(row.request_group_id) === String(group.request_group_id)
+    }).sort(function (left, right) {
+      return String(right.created_at).localeCompare(String(left.created_at))
+    })
+    var cancellationRequests = cancellationRows.map(function (row) {
+      return {
+        cancellationRequestId: String(row.cancellation_request_id),
+        reason: String(row.reason || ''),
+        status: String(row.status || ''),
+        reviewNote: String(row.review_note || ''),
+        createdAt: String(row.created_at || ''),
+        reviewedAt: String(row.reviewed_at || '')
+      }
+    })
+    var hasOpenCancellation = cancellationRequests.some(function (row) {
+      return ['pending', 'accepted_pending_execution'].indexOf(row.status) !== -1
+    })
+    var canRequestCancellation = Boolean(order) &&
+      ['confirmed', 'packing'].indexOf(String(order.status || '')) !== -1 &&
+      !hasOpenCancellation
+
     return {
       requestCode: String(group.request_code),
       status: String(group.status),
@@ -141,11 +167,20 @@ function apiCustomerGetPortal(accessToken) {
         paymentStatus: String(order.payment_status || 'unpaid'),
         shopeeCheckoutUrl: String(order.shopee_checkout_url || ''),
         trackingNumber: String(order.tracking_number || ''),
-        courier: String(order.courier || '')
+        courier: String(order.courier || ''),
+        canRequestCancellation: canRequestCancellation,
+        cancellationRequests: cancellationRequests
       } : null
     }
   })
 }
+
+function apiCustomerRequestOrderCancellation(accessToken, reason) {
+  return safeApi_(function () {
+    return createCustomerCancellationRequest_(accessToken, reason)
+  })
+}
+
 
 function apiCustomerGetPhoto(accessToken, requestId, photoIndex) {
   return safeApi_(function () {
@@ -251,23 +286,42 @@ function apiAdminListOrders(sessionToken) {
     var orders = readRecords_('Orders')
     var payments = readRecords_('Payments')
     var shipments = readRecords_('Shipments')
+    var cancellations = readRecords_('Cancellation_Requests')
+    var paymentsByOrder = Object.create(null)
+    var shipmentsByOrder = Object.create(null)
+    var cancellationsByOrder = Object.create(null)
+
+    payments.forEach(function (payment) {
+      var key = String(payment.order_id || '')
+      if (!key) return
+      if (!paymentsByOrder[key]) paymentsByOrder[key] = []
+      paymentsByOrder[key].push(payment)
+    })
+    shipments.forEach(function (shipment) {
+      var key = String(shipment.order_id || '')
+      if (key && !shipmentsByOrder[key]) shipmentsByOrder[key] = shipment
+    })
+    cancellations.forEach(function (request) {
+      var key = String(request.order_id || '')
+      if (!key) return
+      if (!cancellationsByOrder[key]) cancellationsByOrder[key] = []
+      cancellationsByOrder[key].push(request)
+    })
+
     return orders.filter(function (order) {
       return String(order.status) !== 'creating'
     }).map(function (order) {
-      var orderPayments = payments.filter(function (payment) {
-        return String(payment.order_id) === String(order.order_id)
-      })
+      var orderId = String(order.order_id)
+      var orderPayments = paymentsByOrder[orderId] || []
       var verifiedPaid = orderPayments.filter(function (payment) {
         return String(payment.verification_status) === 'verified'
       }).reduce(function (sum, payment) {
         var amount = Number(payment.amount || 0)
         return sum + (String(payment.type) === 'refund' ? -amount : amount)
       }, 0)
-      var shipment = shipments.filter(function (row) {
-        return String(row.order_id) === String(order.order_id)
-      })[0] || {}
+      var shipment = shipmentsByOrder[orderId] || {}
       return {
-        orderId: String(order.order_id),
+        orderId: orderId,
         orderCode: String(order.order_code),
         requestGroupId: String(order.request_group_id || ''),
         customerName: String(order.customer_name || ''),
@@ -299,6 +353,19 @@ function apiAdminListOrders(sessionToken) {
             occurredAt: String(payment.occurred_at || ''),
             notes: String(payment.notes || '')
           }
+        }),
+        cancellationRequests: (cancellationsByOrder[orderId] || []).map(function (request) {
+          return {
+            cancellationRequestId: String(request.cancellation_request_id),
+            requestGroupId: String(request.request_group_id),
+            reason: String(request.reason || ''),
+            status: String(request.status || ''),
+            reviewNote: String(request.review_note || ''),
+            createdAt: String(request.created_at || ''),
+            reviewedAt: String(request.reviewed_at || '')
+          }
+        }).sort(function (left, right) {
+          return String(right.createdAt).localeCompare(String(left.createdAt))
         })
       }
     }).sort(function (left, right) {
@@ -306,6 +373,13 @@ function apiAdminListOrders(sessionToken) {
     })
   })
 }
+
+function apiAdminReviewCancellationRequest(sessionToken, cancellationRequestId, decision, reviewNote) {
+  return safeApi_(function () {
+    return reviewCancellationRequestAsAdmin_(sessionToken, cancellationRequestId, decision, reviewNote)
+  })
+}
+
 
 function apiAdminUpdateOrderOptions(sessionToken, payload) {
   return safeApi_(function () {
@@ -343,26 +417,28 @@ function apiAdminGetFinancialSummary(sessionToken) {
     var expenses = readRecords_('Expenses')
     var units = readRecords_('Units')
 
-    var bankAndCash = payments.filter(function (row) {
-      return String(row.type) !== 'shopee' && String(row.type) !== 'refund'
-    }).reduce(function (sum, row) { return sum + Number(row.amount || 0) }, 0)
-    var shopee = payments.filter(function (row) {
-      return String(row.type) === 'shopee'
-    }).reduce(function (sum, row) { return sum + Number(row.amount || 0) }, 0)
-    var refunds = payments.filter(function (row) {
-      return String(row.type) === 'refund'
-    }).reduce(function (sum, row) { return sum + Number(row.amount || 0) }, 0)
-    var feeBilled = orders.reduce(function (sum, row) {
-      return sum + Number(row.jastip_fee || 0)
-    }, 0)
+    var bankAndCash = 0
+    var shopee = 0
+    var refunds = 0
+    var paidByOrder = Object.create(null)
+    payments.forEach(function (row) {
+      var amount = Number(row.amount || 0)
+      var type = String(row.type)
+      if (type === 'shopee') shopee += amount
+      else if (type === 'refund') refunds += amount
+      else bankAndCash += amount
+
+      var orderId = String(row.order_id || '')
+      if (orderId) {
+        paidByOrder[orderId] = (paidByOrder[orderId] || 0) + (type === 'refund' ? -amount : amount)
+      }
+    })
+
+    var feeBilled = 0
     var outstanding = 0
     orders.forEach(function (order) {
-      var paid = payments.filter(function (payment) {
-        return String(payment.order_id) === String(order.order_id)
-      }).reduce(function (sum, payment) {
-        var amount = Number(payment.amount || 0)
-        return sum + (String(payment.type) === 'refund' ? -amount : amount)
-      }, 0)
+      feeBilled += Number(order.jastip_fee || 0)
+      var paid = paidByOrder[String(order.order_id)] || 0
       outstanding += Math.max(0, Number(order.total_amount || 0) - paid)
     })
     var expensesTotal = expenses.reduce(function (sum, row) {
@@ -413,18 +489,41 @@ function apiAdminListRequests(sessionToken, statusFilter) {
     var requests = readRecords_('Requests')
     var buyers = readRecords_('Buyers')
     var payments = readRecords_('Payments')
+    var requestsByGroup = Object.create(null)
+    var paymentsByGroup = Object.create(null)
+    var buyersById = Object.create(null)
     var wanted = String(statusFilter || 'all')
+
+    requests.forEach(function (row) {
+      var key = String(row.request_group_id)
+      if (!requestsByGroup[key]) requestsByGroup[key] = []
+      requestsByGroup[key].push(row)
+    })
+    payments.forEach(function (row) {
+      var key = String(row.request_group_id || '')
+      if (!key) return
+      if (!paymentsByGroup[key]) paymentsByGroup[key] = []
+      paymentsByGroup[key].push(row)
+    })
+    buyers.forEach(function (row) {
+      buyersById[String(row.buyer_id)] = row
+    })
+
     return groups.filter(function (group) {
-      var items = requests.filter(function (row) {
-        return String(row.request_group_id) === String(group.request_group_id)
-      })
+      var items = requestsByGroup[String(group.request_group_id)] || []
       return wanted === 'all' || String(group.status) === wanted || items.some(function (row) {
         return String(row.status) === wanted
       })
     }).map(function (group) {
-      var buyer = buyers.filter(function (row) { return String(row.buyer_id) === String(group.buyer_id) })[0] || {}
+      var groupId = String(group.request_group_id)
+      var buyer = buyersById[String(group.buyer_id)] || {}
+      var groupPayments = paymentsByGroup[groupId] || []
+      var verifiedDepositAmount = groupPayments.reduce(function (sum, payment) {
+        return sum + (String(payment.type) === 'deposit' && String(payment.verification_status) === 'verified'
+          ? Number(payment.amount || 0) : 0)
+      }, 0)
       return {
-        requestGroupId: String(group.request_group_id),
+        requestGroupId: groupId,
         orderId: String(group.order_id || ''),
         hasActiveAccessToken: Boolean(group.access_token_hash) && !group.access_token_revoked_at,
         requestCode: String(group.request_code),
@@ -433,9 +532,7 @@ function apiAdminListRequests(sessionToken, statusFilter) {
         customerName: String(buyer.name || ''),
         customerPhone: String(buyer.phone || ''),
         customerAddress: String(buyer.address || ''),
-        payments: payments.filter(function (payment) {
-          return String(payment.request_group_id) === String(group.request_group_id)
-        }).map(function (payment) {
+        payments: groupPayments.map(function (payment) {
           return {
             paymentId: String(payment.payment_id),
             type: String(payment.type),
@@ -447,14 +544,8 @@ function apiAdminListRequests(sessionToken, statusFilter) {
             hasProof: Boolean(payment.proof_file_id)
           }
         }),
-        verifiedDepositAmount: payments.filter(function (payment) {
-          return String(payment.request_group_id) === String(group.request_group_id) &&
-            String(payment.type) === 'deposit' &&
-            String(payment.verification_status) === 'verified'
-        }).reduce(function (sum, payment) { return sum + Number(payment.amount || 0) }, 0),
-        items: requests.filter(function (row) {
-          return String(row.request_group_id) === String(group.request_group_id)
-        }).map(function (row) {
+        verifiedDepositAmount: verifiedDepositAmount,
+        items: (requestsByGroup[groupId] || []).map(function (row) {
           return {
             requestId: String(row.request_id),
             productId: String(row.product_id),
@@ -469,6 +560,8 @@ function apiAdminListRequests(sessionToken, statusFilter) {
           }
         })
       }
+    }).sort(function (left, right) {
+      return String(right.createdAt).localeCompare(String(left.createdAt))
     })
   })
 }

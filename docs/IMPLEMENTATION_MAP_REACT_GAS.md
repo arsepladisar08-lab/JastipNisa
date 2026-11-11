@@ -440,6 +440,26 @@ Status alternatif:
 
 Transisi final harus mempertimbangkan bahwa request dan deposit dapat tercatat sebelum order final dibuat. Status di atas adalah alur bisnis; detail transisi teknis perlu diselaraskan saat implementasi service dan diuji pada skenario request multi-item.
 
+### 8.3.1 Cancellation request review — technical workflow
+
+This is a separate review register layered on top of the order state machine above. It does not replace the order status `dibatalkan` and does not imply that cancellation has been executed.
+
+```text
+Order confirmed / packing
+  -> customer submits cancellation request
+  -> pending
+       -> admin rejects -> rejected
+       -> admin accepts -> accepted_pending_execution
+                              -> manual resolution required
+```
+
+Implementation boundaries:
+- The online customer request is available only while the technical order status is `confirmed` or `packing`.
+- Admin acceptance records a decision only. It does not change the order status, release an allocated unit, or insert/verify a refund.
+- A shipped or completed order must be handled manually; this path does not attempt to reverse shipping.
+- Refund amount, treatment of deposits, goods already purchased, release/reuse of stock, and customer/store return or complaint rules remain owner decisions. Do not turn these open questions into automatic defaults.
+
+
 ### 8.4 Pembayaran
 
 ~~~text

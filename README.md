@@ -19,6 +19,12 @@ Pada website publik Vercel, tombol **Mulai Request** mengarah ke React + GAS Web
 - Panduan kontrol pengembangan dan aturan bisnis: [docs/DEVELOPMENT_CONTROL.md](docs/DEVELOPMENT_CONTROL.md).
 - Nomor WhatsApp pada app GAS dibaca dari baris `admin_whatsapp` di sheet `Settings`; isi format internasional digit saja dan set `is_public` ke `TRUE`.
 
+## P4/P5 preview on working branch
+
+- Customer cancellation requests and admin review are implemented as a separate, non-destructive review register. Acceptance does not automatically cancel an order, release inventory or issue a refund.
+- Database read snapshots are scoped to one API/locked execution; ID-keyed updates are grouped into contiguous sheet ranges. CI validates call counts with a local Spreadsheet stub.
+- See [docs/DEVELOPMENT_CONTROL.md](docs/DEVELOPMENT_CONTROL.md) for constraints, staging setup and remaining policy decisions.
+
 ## Target architecture
 
 - **Frontend:** React + Vite + TypeScript.

@@ -12,6 +12,7 @@ const required = [
   'gas/Security.gs',
   'gas/RequestService.gs',
   'gas/WorkflowService.gs',
+  'gas/CancellationService.gs',
   'gas/DriveService.gs',
   'gas/CatalogService.gs',
   'gas/Index.html',
@@ -118,6 +119,145 @@ if (!paymentBody.includes('idempotency_payload_hash') || !paymentBody.includes('
 if (!serverSource.includes("'idempotency_payload_hash'")) {
   throw new Error('Database schema must persist idempotency payload fingerprints.')
 }
+
+if (!serverSource.includes("Cancellation_Requests: ['cancellation_request_id'")) {
+  throw new Error('Cancellation review register must be included in the database schema.')
+}
+const cancellationCreateBody = getServerFunctionSource('createCustomerCancellationRequest_')
+const cancellationReviewBody = getServerFunctionSource('reviewCancellationRequestAsAdmin_')
+const cancellationCreateLock = cancellationCreateBody.indexOf('withScriptLock_(function () {')
+const cancellationReviewLock = cancellationReviewBody.indexOf('withScriptLock_(function () {')
+if (cancellationCreateLock < 0 ||
+    !cancellationCreateBody.slice(cancellationCreateLock).includes('findRequestGroupByToken_(accessToken)') ||
+    !cancellationCreateBody.includes("['confirmed', 'packing']")) {
+  throw new Error('Customer cancellation requests must revalidate their token and only accept eligible pre-shipment orders.')
+}
+if (cancellationReviewLock < 0 ||
+    !cancellationReviewBody.slice(cancellationReviewLock).includes('session = requireAdmin_(sessionToken)') ||
+    !cancellationReviewBody.includes("['confirmed', 'packing']")) {
+  throw new Error('Cancellation review must revalidate an admin session and the current order status under lock.')
+}
+for (const forbiddenWrite of [
+  "updateRecord_('Orders'",
+  "updateRecordsById_('Orders'",
+  "updateRecord_('Units'",
+  "updateRecordsById_('Units'",
+  "updateRecord_('Payments'",
+  "updateRecordsById_('Payments'",
+]) {
+  if (cancellationReviewBody.includes(forbiddenWrite)) {
+    throw new Error('Cancellation review must not execute order, inventory, or payment changes automatically.')
+  }
+}
+if (!cancellationReviewBody.includes('accepted_pending_execution') ||
+    !cancellationReviewBody.includes('executionDeferred')) {
+  throw new Error('Accepted cancellation requests must remain explicitly pending manual execution.')
+}
+
+// Exercise the database execution cache and grouped writes using an isolated
+// in-memory Spreadsheet stub. This validates call counts and invalidation
+// behavior without contacting any real Google spreadsheet.
+const databaseTables = {
+  Orders: {
+    headers: ['order_id', 'status', 'total_amount'],
+    rows: [
+      ['o-1', 'confirmed', 100000],
+      ['o-2', 'packing', 200000],
+    ],
+  },
+}
+const databaseCalls = { reads: 0, writes: 0 }
+function createDatabaseSheet(tableName) {
+  const table = databaseTables[tableName]
+  return {
+    getLastRow() { return table.rows.length + 1 },
+    getLastColumn() { return table.headers.length },
+    getRange(startRow, startColumn, rowCount, columnCount) {
+      return {
+        getDisplayValues() {
+          databaseCalls.reads += 1
+          return Array.from({ length: rowCount }, (_, rowIndex) =>
+            Array.from({ length: columnCount }, (_, columnIndex) => {
+              const row = startRow + rowIndex - 1
+              const column = startColumn + columnIndex - 1
+              const value = row === 0 ? table.headers[column] : table.rows[row - 1]?.[column]
+              return value === undefined || value === null ? '' : String(value)
+            }),
+          )
+        },
+        getValues() {
+          databaseCalls.reads += 1
+          return Array.from({ length: rowCount }, (_, rowIndex) =>
+            Array.from({ length: columnCount }, (_, columnIndex) => {
+              const row = startRow + rowIndex - 1
+              const column = startColumn + columnIndex - 1
+              return row === 0 ? table.headers[column] : table.rows[row - 1]?.[column] ?? ''
+            }),
+          )
+        },
+        setValues(matrix) {
+          databaseCalls.writes += 1
+          matrix.forEach((row, rowIndex) => {
+            const absoluteRow = startRow + rowIndex - 1
+            if (absoluteRow === 0) {
+              table.headers = row.slice()
+              return
+            }
+            while (table.rows.length < absoluteRow) {
+              table.rows.push(Array(table.headers.length).fill(''))
+            }
+            row.forEach((value, columnIndex) => {
+              table.rows[absoluteRow - 1][startColumn - 1 + columnIndex] = value
+            })
+          })
+        },
+      }
+    },
+  }
+}
+const databaseSpreadsheet = {
+  getSheetByName(name) {
+    return databaseTables[name] ? createDatabaseSheet(name) : null
+  },
+}
+const databaseContext = createContext({
+  PropertiesService: { getScriptProperties: () => ({ getProperty: () => 'test-spreadsheet' }) },
+  SpreadsheetApp: { openById: () => databaseSpreadsheet },
+  LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+})
+serverProgram.runInContext(databaseContext)
+databaseContext.resetDatabaseExecutionCache_()
+const firstDatabaseSnapshot = databaseContext.readRecords_('Orders')
+firstDatabaseSnapshot[0].status = 'mutated outside snapshot'
+const secondDatabaseSnapshot = databaseContext.readRecords_('Orders')
+if (secondDatabaseSnapshot[0].status !== 'confirmed') {
+  throw new Error('Database cache must return isolated copies rather than exposing the cached snapshot.')
+}
+let databaseMetrics = databaseContext.getDatabaseExecutionMetrics_()
+if (databaseMetrics.rangeReads !== 1 || databaseMetrics.cacheHits !== 1) {
+  throw new Error('Repeated table reads within one execution must use one sheet data range read.')
+}
+const affectedRows = databaseContext.updateRecordsById_('Orders', 'order_id', [
+  { id: 'o-1', patch: { status: 'packing' } },
+  { id: 'o-2', patch: { status: 'shipped' } },
+])
+databaseMetrics = databaseContext.getDatabaseExecutionMetrics_()
+if (affectedRows !== 2 || databaseMetrics.batchWriteGroups !== 1 || databaseMetrics.rangeWrites !== 1) {
+  throw new Error('Adjacent record updates must be written in one contiguous spreadsheet range.')
+}
+const refreshedDatabaseRows = databaseContext.readRecords_('Orders')
+if (refreshedDatabaseRows[0].status !== 'packing' || refreshedDatabaseRows[1].status !== 'shipped') {
+  throw new Error('Database writes must invalidate cached table snapshots before the next read.')
+}
+databaseContext.withScriptLock_(function () {
+  databaseContext.readRecords_('Orders')
+  databaseContext.readRecords_('Orders')
+})
+databaseTables.Orders.rows[0][1] = 'external update'
+if (databaseContext.readRecords_('Orders')[0].status !== 'external update') {
+  throw new Error('Database snapshots must not survive the end of a locked Apps Script execution.')
+}
+console.log('Database cache/batch checks passed: 1 cached repeat read, 2 ID updates in 1 grouped range write.')
 
 // Exercise doGet(e) with deterministic Apps Script service stubs. This does not
 // replace a deployment test, but verifies query validation and bootstrap HTML.

@@ -24,6 +24,8 @@ import {
   listAdminRequests,
   logoutAdmin,
   respondToRequestItem,
+  requestCustomerOrderCancellation,
+  reviewAdminCancellationRequest,
   reissueCustomerAccessToken,
   revokeCustomerAccessToken,
   saveAdminCatalogProduct,
@@ -120,6 +122,10 @@ function displayStatus(status: string) {
     packing: 'Sedang packing',
     shipped: 'Dikirim',
     completed: 'Selesai',
+    pending: 'Menunggu review admin',
+    accepted_pending_execution: 'Diterima — menunggu tindak lanjut',
+    rejected: 'Permintaan ditolak',
+    cancelled: 'Dibatalkan',
     unpaid: 'Belum dibayar',
     partially_paid: 'Pembayaran sebagian',
     paid: 'Lunas',
@@ -343,6 +349,8 @@ function PortalPage() {
   const [phone, setPhone] = useState('')
   const [address, setAddress] = useState('')
   const [shopeeUsername, setShopeeUsername] = useState('')
+  const [cancellationReason, setCancellationReason] = useState('')
+  const [cancellationBusy, setCancellationBusy] = useState(false)
 
   const refresh = useCallback(async (token: string) => {
     setLoading(true)
@@ -452,6 +460,25 @@ function PortalPage() {
     }
   }
 
+  async function submitCancellation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (cancellationReason.trim().length < 8 || cancellationBusy) return
+    setCancellationBusy(true)
+    setError('')
+    try {
+      const result = await requestCustomerOrderCancellation(activeToken, cancellationReason)
+      setNotice(result.reused
+        ? 'Permintaan pembatalan sebelumnya masih tercatat.'
+        : 'Permintaan pembatalan sudah diterima untuk ditinjau admin. Pesanan belum dibatalkan.')
+      setCancellationReason('')
+      await refresh(activeToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Permintaan pembatalan belum dapat dikirim.')
+    } finally {
+      setCancellationBusy(false)
+    }
+  }
+
   const canSubmitDetails = Boolean(portal?.items.length) && portal!.items.every((item) =>
     item.status === 'found' && item.customerDecision === 'approved',
   )
@@ -501,8 +528,33 @@ function PortalPage() {
           <label className="jn-field">Alamat lengkap<textarea required rows={3} value={address} onChange={(event) => setAddress(event.target.value)} /></label>
           <button className="jn-button jn-button-primary">Kirim format order</button>
         </form>}
-        {portal.order && <div className="jn-order-summary"><span className="jn-eyebrow">FINAL ORDER</span><h3>{portal.order.orderCode}</h3><p>Status: {displayStatus(portal.order.status)} · Pembayaran: {displayStatus(portal.order.paymentStatus)}</p><strong>{formatRupiah(portal.order.totalAmount)}</strong>{portal.order.courier && <p>{portal.order.courier} · {portal.order.trackingNumber}</p>}
-          {portal.order.shopeeCheckoutUrl && <form className="jn-form" onSubmit={submitShopee}><label className="jn-field">Nama akun Shopee<input required value={shopeeUsername} onChange={(event) => setShopeeUsername(event.target.value)} /></label><button className="jn-button jn-button-primary">Konfirmasi akun Shopee</button></form>}
+        {portal.order && <div className="jn-order-summary">
+          <span className="jn-eyebrow">FINAL ORDER</span>
+          <h3>{portal.order.orderCode}</h3>
+          <p>Status: {displayStatus(portal.order.status)} · Pembayaran: {displayStatus(portal.order.paymentStatus)}</p>
+          <strong>{formatRupiah(portal.order.totalAmount)}</strong>
+          {portal.order.courier && <p>{portal.order.courier} · {portal.order.trackingNumber}</p>}
+          {portal.order.shopeeCheckoutUrl && <form className="jn-form" onSubmit={submitShopee}>
+            <label className="jn-field">Nama akun Shopee<input required value={shopeeUsername} onChange={(event) => setShopeeUsername(event.target.value)} /></label>
+            <button className="jn-button jn-button-primary">Konfirmasi akun Shopee</button>
+          </form>}
+          {portal.order.cancellationRequests.length > 0 && <div className="jn-cancellation-history">
+            <strong>Riwayat permintaan pembatalan</strong>
+            {portal.order.cancellationRequests.map((request) => <article key={request.cancellationRequestId}>
+              <div className="jn-cancellation-history-head"><span>{displayStatus(request.status)}</span><small>{new Date(request.createdAt).toLocaleString('id-ID')}</small></div>
+              <p>{request.reason}</p>
+              {request.reviewNote && <small>Catatan admin: {request.reviewNote}</small>}
+              {request.status === 'accepted_pending_execution' && <p className="jn-cancellation-deferred">Admin menerima permintaan untuk ditindaklanjuti. Pesanan belum berstatus batal; stok dan pembayaran belum diubah.</p>}
+            </article>)}
+          </div>}
+          {portal.order.canRequestCancellation && <form className="jn-form jn-cancellation-form" onSubmit={submitCancellation}>
+            <div><span className="jn-eyebrow">ORDER SUPPORT</span><h3>Ajukan pembatalan pesanan</h3>
+              <p>Permintaan akan ditinjau admin. Mengirim permintaan tidak otomatis membatalkan order atau memproses refund.</p></div>
+            <label className="jn-field">Alasan pembatalan<textarea rows={3} minLength={8} maxLength={1000} required value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} placeholder="Jelaskan alasan pembatalan (minimal 8 karakter)" /></label>
+            <button className="jn-button jn-button-outline" disabled={cancellationBusy}>{cancellationBusy ? 'Mengirim permintaan…' : 'Kirim permintaan pembatalan'}</button>
+          </form>}
+          {!portal.order.canRequestCancellation && portal.order.cancellationRequests.some((request) => ['pending', 'accepted_pending_execution'].includes(request.status)) &&
+            <p className="jn-muted">Permintaan pembatalan sedang atau sudah ditinjau. Hubungi admin melalui WhatsApp untuk tindak lanjut lebih lanjut.</p>}
         </div>}
       </section>}
     </AppShell>
@@ -895,6 +947,23 @@ function AdminPage() {
     }
   }
 
+  async function reviewCancellation(
+    cancellationRequestId: string,
+    decision: 'accepted' | 'rejected',
+    reviewNote: string,
+  ) {
+    setError('')
+    try {
+      const result = await reviewAdminCancellationRequest(sessionToken, cancellationRequestId, decision, reviewNote)
+      setNotice(result.executionDeferred
+        ? 'Permintaan diterima untuk tindak lanjut manual. Status order, stok, dan ledger tidak diubah.'
+        : 'Keputusan review pembatalan tersimpan.')
+      await refresh(sessionToken)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Review pembatalan belum dapat disimpan.')
+    }
+  }
+
   async function saveExpense(form: HTMLFormElement) {
     const values = new FormData(form)
     const amount = Number(values.get('amount') || 0)
@@ -984,6 +1053,7 @@ function AdminPage() {
       onViewProof={viewPaymentProof}
       onUpdateShipment={updateShipment}
       onSaveShopeeLink={saveShopeeLink}
+      onReviewCancellation={reviewCancellation}
     />
     <FinanceManager
       summary={financialSummary}
@@ -1156,6 +1226,44 @@ function CatalogManager({
   </section>
 }
 
+function CancellationReviewCard({
+  request,
+  onReview,
+}: {
+  request: AdminOrder['cancellationRequests'][number]
+  onReview: (requestId: string, decision: 'accepted' | 'rejected', note: string) => Promise<void>
+}) {
+  const [reviewNote, setReviewNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function submit(decision: 'accepted' | 'rejected') {
+    if (reviewNote.trim().length < 3 || busy) return
+    setBusy(true)
+    try {
+      await onReview(request.cancellationRequestId, decision, reviewNote)
+      setReviewNote('')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <article className="jn-cancellation-review">
+    <div className="jn-cancellation-history-head">
+      <strong>{displayStatus(request.status)}</strong>
+      <small>{new Date(request.createdAt).toLocaleString('id-ID')}</small>
+    </div>
+    <p>{request.reason}</p>
+    {request.reviewNote && <small>Catatan review: {request.reviewNote}</small>}
+    {request.status === 'pending' && <div className="jn-cancellation-review-actions">
+      <label className="jn-field">Catatan keputusan admin<textarea rows={2} minLength={3} maxLength={1000} required value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Jelaskan alasan keputusan atau tindak lanjut manual" /></label>
+      <div className="jn-inline-actions">
+        <button type="button" className="jn-button jn-button-primary" disabled={busy || reviewNote.trim().length < 3} onClick={() => void submit('accepted')}>Terima untuk tindak lanjut</button>
+        <button type="button" className="jn-button jn-button-outline" disabled={busy || reviewNote.trim().length < 3} onClick={() => void submit('rejected')}>Tolak permintaan</button>
+      </div>
+      <small>Menerima hanya mencatat keputusan. Jangan tandai order batal atau melakukan refund dari panel ini.</small>
+    </div>}
+    {request.status === 'accepted_pending_execution' && <p className="jn-cancellation-deferred">Diterima; menunggu penyelesaian manual. Order, unit dan pembayaran belum diubah.</p>}
+  </article>
+}
+
 function OrdersManager({
   orders,
   onAddPayment,
@@ -1163,6 +1271,7 @@ function OrdersManager({
   onViewProof,
   onUpdateShipment,
   onSaveShopeeLink,
+  onReviewCancellation,
 }: {
   orders: AdminOrder[]
   onAddPayment: (orderId: string, form: HTMLFormElement) => Promise<void>
@@ -1170,6 +1279,7 @@ function OrdersManager({
   onViewProof: (paymentId: string) => Promise<{ fileName: string; mimeType: string; base64: string }>
   onUpdateShipment: (orderId: string, form: HTMLFormElement) => Promise<void>
   onSaveShopeeLink: (orderId: string, form: HTMLFormElement) => Promise<void>
+  onReviewCancellation: (requestId: string, decision: 'accepted' | 'rejected', note: string) => Promise<void>
 }) {
   const [proofPreviews, setProofPreviews] = useState<Record<string, { fileName: string; mimeType: string; dataUrl: string }>>({})
   async function openProof(paymentId: string) {
@@ -1195,6 +1305,11 @@ function OrdersManager({
         <div className="jn-order-card-head"><div><span className="jn-eyebrow">{order.orderCode}</span><h3>{order.customerName}</h3><small>{order.customerPhone} · {new Date(order.createdAt).toLocaleString('id-ID')}</small></div><span className="jn-status">{displayStatus(order.status)}</span></div>
         <div className="jn-order-info"><div><small>Jumlah produk</small><strong>{order.productCount}</strong></div><div><small>Fee jastip</small><strong>{formatRupiah(order.fee)}</strong></div><div><small>Total order</small><strong>{formatRupiah(order.totalAmount)}</strong></div></div>
         <div className="jn-order-balance"><span>Terbayar {formatRupiah(order.totalPaid)}</span><strong>Sisa {formatRupiah(order.balance)}</strong><small>Status: {displayStatus(order.paymentStatus)}. Ongkir tidak termasuk total ini hingga biaya final ditetapkan.</small></div>
+        {order.cancellationRequests.length > 0 && <section className="jn-cancellation-review-panel">
+          <div><span className="jn-eyebrow">CANCELLATION REVIEW</span><strong>Permintaan pembatalan</strong></div>
+          {order.cancellationRequests.map((request) => <CancellationReviewCard key={request.cancellationRequestId} request={request} onReview={onReviewCancellation} />)}
+          <small>Keputusan “terima” belum membatalkan order dan tidak memicu refund atau pelepasan unit.</small>
+        </section>}
         <div className="jn-order-payments">
           <strong>Riwayat pembayaran</strong>
           {order.payments.map((payment) => <div className="jn-order-payment" key={payment.paymentId}>

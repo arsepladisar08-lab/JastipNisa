@@ -37,6 +37,9 @@ Dokumentasi lama yang memilih Supabase sudah tidak menjadi keputusan arsitektur 
 - [x] P3 lazy-load foto portal dan CTA WhatsApp berbasis konfigurasi GAS digabung melalui PR #11.
 - [x] CI PR #11 lulus: dependency audit, typecheck, 35 unit tests, Vercel build, GAS single-file build, dan GAS validation.
 - [ ] Uji integrasi di GAS staging dan deployment produksi masih diperlukan; belum dilakukan.
+- [x] P4 cancellation request/review workflow ditambahkan pada branch `codex/p4-cancellation-p5-performance`; accepted tetap menunggu eksekusi manual.
+- [x] P5 execution-scoped database snapshot, grouped ID updates, O(n) lookup maps, dan validator berbasis Spreadsheet stub ditambahkan pada branch yang sama.
+- [ ] Review PR dan CI P4/P5 masih diperlukan. Tidak ada deployment atau perubahan spreadsheet produksi.
 
 ## Status saat dokumen dibuat
 

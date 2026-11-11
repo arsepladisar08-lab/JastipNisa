@@ -26,20 +26,33 @@ function uploadRequestPhotoAsAdmin_(sessionToken, payload) {
   var file = DriveApp.getFolderById(folderId).createFile(blob)
   file.setDescription('JastipNisa actual unit photo for request ' + requestId)
 
-  withScriptLock_(function () {
-    var fresh = findRecord_('Requests', 'request_id', requestId)
-    var photoIds = safeJsonParse_(fresh.actual_photo_file_ids_json, [])
-    photoIds.push(file.getId())
-    updateRecord_('Requests', 'request_id', requestId, {
-      actual_photo_file_ids_json: JSON.stringify(photoIds),
-      customer_decision: '',
-      updated_at: isoNow_()
+  try {
+    return withScriptLock_(function () {
+      session = requireAdmin_(sessionToken)
+      var fresh = findRecord_('Requests', 'request_id', requestId)
+      if (!fresh || String(fresh.status) !== 'found') {
+        throw publicError_('INVALID_STATE', 'Status request berubah sebelum foto tersimpan. File sementara dibersihkan.')
+      }
+      var photoIds = safeJsonParse_(fresh.actual_photo_file_ids_json, [])
+      photoIds.push(file.getId())
+      var saved = updateRecord_('Requests', 'request_id', requestId, {
+        actual_photo_file_ids_json: JSON.stringify(photoIds),
+        customer_decision: '',
+        updated_at: isoNow_()
+      })
+      if (!saved) {
+        throw publicError_('REQUEST_NOT_FOUND', 'Request item tidak lagi tersedia.')
+      }
+      appendAudit_('admin', session.role, 'request_photo_uploaded', 'request', requestId, { fileId: file.getId() })
+      return { uploaded: true, photoCount: photoIds.length }
     })
-    appendAudit_('admin', session.role, 'request_photo_uploaded', 'request', requestId, { fileId: file.getId() })
-  })
-  return { uploaded: true, photoCount: safeJsonParse_(findRecord_('Requests', 'request_id', requestId).actual_photo_file_ids_json, []).length }
+  } catch (error) {
+    try { file.setTrashed(true) } catch (cleanupError) {
+      console.error('JastipNisa temporary photo cleanup failed: ' + String(cleanupError))
+    }
+    throw error
+  }
 }
-
 
 function uploadPaymentProofAsAdmin_(sessionToken, payload) {
   var session = requireAdmin_(sessionToken)
@@ -64,36 +77,40 @@ function uploadPaymentProofAsAdmin_(sessionToken, payload) {
   var folderId = getScriptProperties_().getProperty('JN_PAYMENT_PROOFS_FOLDER_ID')
   if (!folderId) throw new Error('Folder bukti pembayaran belum dikonfigurasi.')
   var safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 90)
-  var file = DriveApp.getFolderById(folderId).createFile(Utilities.newBlob(bytes, mimeType, safeName))
-  file.setDescription('JastipNisa private payment proof; admin-only access.')
-  appendAudit_('admin', session.role, 'payment_proof_uploaded', 'drive_file', file.getId(), {
-    mimeType: mimeType,
-    byteLength: bytes.length
+  return withScriptLock_(function () {
+    session = requireAdmin_(sessionToken)
+    var file = DriveApp.getFolderById(folderId).createFile(Utilities.newBlob(bytes, mimeType, safeName))
+    file.setDescription('JastipNisa private payment proof; admin-only access.')
+    appendAudit_('admin', session.role, 'payment_proof_uploaded', 'drive_file', file.getId(), {
+      mimeType: mimeType,
+      byteLength: bytes.length
+    })
+    return { fileId: file.getId(), fileName: file.getName() }
   })
-  return { fileId: file.getId(), fileName: file.getName() }
 }
 
-
 function getPaymentProofAsAdmin_(sessionToken, paymentId) {
-  var session = requireAdmin_(sessionToken)
-  var payment = findRecord_('Payments', 'payment_id', paymentId)
-  if (!payment || !payment.proof_file_id) {
-    throw publicError_('PROOF_NOT_FOUND', 'Bukti pembayaran belum tersedia.')
-  }
-  var file = DriveApp.getFileById(String(payment.proof_file_id))
-  var blob = file.getBlob()
-  var bytes = blob.getBytes()
-  if (bytes.length > 700000) {
-    throw publicError_('FILE_TOO_LARGE', 'Bukti pembayaran terlalu besar untuk ditampilkan di dashboard.')
-  }
-  var mimeType = blob.getContentType()
-  if (!/^image\/(jpeg|png|webp)$/.test(mimeType) && mimeType !== 'application/pdf') {
-    throw publicError_('INVALID_FILE', 'Tipe bukti pembayaran tidak didukung.')
-  }
-  appendAudit_('admin', session.role, 'payment_proof_viewed', 'payment', paymentId, {})
-  return {
-    fileName: file.getName(),
-    mimeType: mimeType,
-    base64: Utilities.base64Encode(bytes)
-  }
+  return withScriptLock_(function () {
+    var session = requireAdmin_(sessionToken)
+    var payment = findRecord_('Payments', 'payment_id', paymentId)
+    if (!payment || !payment.proof_file_id) {
+      throw publicError_('PROOF_NOT_FOUND', 'Bukti pembayaran belum tersedia.')
+    }
+    var file = DriveApp.getFileById(String(payment.proof_file_id))
+    var blob = file.getBlob()
+    var bytes = blob.getBytes()
+    if (bytes.length > 700000) {
+      throw publicError_('FILE_TOO_LARGE', 'Bukti pembayaran terlalu besar untuk ditampilkan di dashboard.')
+    }
+    var mimeType = blob.getContentType()
+    if (!/^image\/(jpeg|png|webp)$/.test(mimeType) && mimeType !== 'application/pdf') {
+      throw publicError_('INVALID_FILE', 'Tipe bukti pembayaran tidak didukung.')
+    }
+    appendAudit_('admin', session.role, 'payment_proof_viewed', 'payment', paymentId, {})
+    return {
+      fileName: file.getName(),
+      mimeType: mimeType,
+      base64: Utilities.base64Encode(bytes)
+    }
+  })
 }

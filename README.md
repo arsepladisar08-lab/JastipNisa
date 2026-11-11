@@ -12,6 +12,13 @@ Dokumen utama pengembangan: [Peta Implementasi Terpadu — React + Google Apps S
 
 Pada website publik Vercel, tombol **Mulai Request** mengarah ke React + GAS Web App setelah `VITE_GAS_WEBAPP_URL` dikonfigurasi. Website publik dan aplikasi transaksi tetap berjalan pada origin terpisah; request pelanggan diproses di GAS agar `google.script.run` tetap digunakan secara native. URL deployment GAS adalah konfigurasi publik, bukan tempat menyimpan credential.
 
+
+## Development preview
+
+- React + GAS demo: `npm run dev:gas-demo` (port 3001; password demo admin: `demo-admin`). Data hanya sintetis dan tidak tersimpan ke produksi.
+- Panduan kontrol pengembangan dan aturan bisnis: [docs/DEVELOPMENT_CONTROL.md](docs/DEVELOPMENT_CONTROL.md).
+- Nomor WhatsApp pada app GAS dibaca dari baris `admin_whatsapp` di sheet `Settings`; isi format internasional digit saja dan set `is_public` ke `TRUE`.
+
 ## Target architecture
 
 - **Frontend:** React + Vite + TypeScript.

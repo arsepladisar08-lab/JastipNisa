@@ -48,6 +48,7 @@ import {
 } from '../lib/gasClient'
 import { buildGasUrl, gasWebAppUrl } from '../lib/gasWebApp'
 import { normalizeGasBootstrap } from '../lib/gasBootstrap'
+import { buildWhatsAppHref } from '../lib/whatsapp'
 import {
   isImageUploadMimeType,
   isSupportedUploadMimeType,
@@ -77,6 +78,32 @@ function createSecureToken() {
   const bytes = new Uint8Array(32)
   window.crypto.getRandomValues(bytes)
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function getHiddenFormField(form: HTMLFormElement, name: string): HTMLInputElement {
+  let field = form.querySelector<HTMLInputElement>('input[type="hidden"][name="' + name + '"]')
+  if (!field) {
+    field = document.createElement('input')
+    field.type = 'hidden'
+    field.name = name
+    form.appendChild(field)
+  }
+  return field
+}
+
+function getFormIdempotencyKey(form: HTMLFormElement, payload: Record<string, string | number>): string {
+  const keyField = getHiddenFormField(form, '_jn_idempotency_key')
+  const fingerprintField = getHiddenFormField(form, '_jn_idempotency_fingerprint')
+  const fingerprint = JSON.stringify(payload)
+  if (!keyField.value || fingerprintField.value !== fingerprint) {
+    keyField.value = window.crypto.randomUUID()
+  }
+  fingerprintField.value = fingerprint
+  return keyField.value
+}
+
+function clearFormRetryState(form: HTMLFormElement): void {
+  form.querySelectorAll('input[type="hidden"][name^="_jn_"]').forEach((field) => field.remove())
 }
 
 function displayStatus(status: string) {
@@ -208,7 +235,13 @@ function HomePage() {
           <span className="jn-eyebrow">PERSONAL SHOPPING · FLICKA REFERENCE CATALOG</span>
           <h1>Temukan yang kamu cari. <em>Biar kami bantu buru.</em></h1>
           <p>Ajukan model dan warna yang kamu inginkan. Admin akan memeriksa ketersediaan, mengirim foto aktual, lalu membantu proses pesanan dan pengiriman.</p>
-          <div className="jn-hero-actions"><a href="#catalog" className="jn-button jn-button-primary">Lihat katalog</a><Link to="/portal" className="jn-button jn-button-quiet">Lacak request</Link></div>
+          <div className="jn-hero-actions">
+            <a href="#catalog" className="jn-button jn-button-primary">Lihat katalog</a>
+            <Link to="/portal" className="jn-button jn-button-quiet">Lacak request</Link>
+            {buildWhatsAppHref(config.admin_whatsapp, 'Halo Admin JastipNisa, saya ingin bertanya tentang layanan jastip.') && (
+              <a href={buildWhatsAppHref(config.admin_whatsapp, 'Halo Admin JastipNisa, saya ingin bertanya tentang layanan jastip.')} target="_blank" rel="noreferrer" className="jn-button jn-button-quiet">Hubungi Admin</a>
+            )}
+          </div>
           <div className="jn-hero-note">{config.public_notice || 'Katalog merupakan referensi model. Ketersediaan dan kondisi barang dikonfirmasi admin.'}</div>
         </div>
         <div className="jn-hero-stamp"><span>JASTIP</span><strong>NISA</strong><small>curated finds, personal help</small></div>
@@ -299,6 +332,9 @@ function PortalPage() {
   const [activeToken, setActiveToken] = useState('')
   const [portal, setPortal] = useState<CustomerPortal | null>(null)
   const [photos, setPhotos] = useState<Record<string, string[]>>({})
+  const [photoLoading, setPhotoLoading] = useState('')
+  const [photoErrors, setPhotoErrors] = useState<Record<string, string>>({})
+  const [publicConfig, setPublicConfig] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [busyItem, setBusyItem] = useState('')
   const [error, setError] = useState('')
@@ -314,21 +350,28 @@ function PortalPage() {
     try {
       const data = await getCustomerPortal(token)
       setPortal(data)
-      const photoEntries = await Promise.all(data.items.filter((item) => item.photoCount > 0).map(async (item) => {
-        const loaded = await Promise.all(Array.from({ length: item.photoCount }, async (_value, index) => {
-          const photo = await getCustomerPhoto(token, item.requestId, index)
-          return 'data:' + photo.mimeType + ';base64,' + photo.base64
-        }))
-        return [item.requestId, loaded] as const
-      }))
-      setPhotos(Object.fromEntries(photoEntries))
+      // Photos are intentionally not loaded here. The customer requests them
+      // only after choosing to inspect a specific found item.
+      setPhotos({})
+      setPhotoErrors({})
     } catch (reason) {
       setPortal(null)
       setPhotos({})
+      setPhotoErrors({})
       setError(reason instanceof Error ? reason.message : 'Status request belum dapat dimuat.')
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    getPublicConfig().then((config) => {
+      if (active) setPublicConfig(config)
+    }).catch(() => {
+      if (active) setPublicConfig({})
+    })
+    return () => { active = false }
   }, [])
 
   useEffect(() => {
@@ -348,6 +391,27 @@ function PortalPage() {
     setActiveToken(token)
     setNotice('')
     void refresh(token)
+  }
+
+  async function loadPhotos(requestId: string, photoCount: number) {
+    if (!activeToken || photoLoading) return
+    if (photos[requestId]?.length) return
+    setPhotoLoading(requestId)
+    setPhotoErrors((current) => ({ ...current, [requestId]: '' }))
+    try {
+      const loaded = await Promise.all(Array.from({ length: photoCount }, async (_value, index) => {
+        const photo = await getCustomerPhoto(activeToken, requestId, index)
+        return 'data:' + photo.mimeType + ';base64,' + photo.base64
+      }))
+      setPhotos((current) => ({ ...current, [requestId]: loaded }))
+    } catch (reason) {
+      setPhotoErrors((current) => ({
+        ...current,
+        [requestId]: reason instanceof Error ? reason.message : 'Foto aktual belum dapat dimuat.',
+      }))
+    } finally {
+      setPhotoLoading('')
+    }
   }
 
   async function decide(requestId: string, decision: 'approved' | 'rejected') {
@@ -391,14 +455,25 @@ function PortalPage() {
   const canSubmitDetails = Boolean(portal?.items.length) && portal!.items.every((item) =>
     item.status === 'found' && item.customerDecision === 'approved',
   )
+  const whatsappHref = buildWhatsAppHref(
+    publicConfig.admin_whatsapp,
+    'Halo Admin JastipNisa, saya ingin bertanya tentang request saya' + (portal?.requestCode ? ' ' + portal.requestCode : '') + '.',
+  )
 
   return (
     <AppShell>
-      <section className="jn-page-heading"><span className="jn-eyebrow">CUSTOMER PORTAL</span><h1>Lacak request kamu</h1><p>Masukkan token akses yang diberikan setelah request berhasil dikirim. Jangan bagikan token ini kepada orang lain.</p></section>
+      <section className="jn-page-heading">
+        <span className="jn-eyebrow">CUSTOMER PORTAL</span>
+        <h1>Lacak request kamu</h1>
+        <p>Masukkan token akses yang diberikan setelah request berhasil dikirim. Jangan bagikan token ini kepada orang lain.</p>
+      </section>
       <form className="jn-form jn-token-form" onSubmit={openPortal}>
         <label className="jn-field">Token akses<input required value={tokenInput} onChange={(event) => setTokenInput(event.target.value)} placeholder="Tempel token akses di sini" /></label>
         <button className="jn-button jn-button-primary" disabled={loading}>{loading ? 'Memuat…' : 'Buka status request'}</button>
       </form>
+      {whatsappHref
+        ? <a className="jn-button jn-button-quiet jn-support-link" href={whatsappHref} target="_blank" rel="noreferrer">Hubungi Admin via WhatsApp</a>
+        : <p className="jn-muted jn-support-note">Nomor WhatsApp admin belum dikonfigurasi. Silakan gunakan kanal kontak yang diberikan admin.</p>}
       {error && <div className="jn-alert jn-alert-error">{error}</div>}
       {notice && <div className="jn-alert jn-alert-success">{notice}</div>}
       {portal && <section className="jn-panel jn-portal-card">
@@ -408,7 +483,13 @@ function PortalPage() {
           {portal.items.map((item) => <article className="jn-portal-item" key={item.requestId}>
             <div className="jn-portal-item-head"><div><strong>{item.productName}</strong><small>{item.variantName || 'Varian tidak ditentukan'} · {item.quantity} pcs</small></div><span className="jn-status">{displayStatus(item.status)}</span></div>
             {item.actualCondition && <p className="jn-condition">{item.actualCondition}</p>}
-            {photos[item.requestId]?.length > 0 && <div className="jn-photo-grid">{photos[item.requestId].map((src, index) => <img key={index} src={src} alt={'Foto aktual ' + item.productName + ' ' + (index + 1)} />)}</div>}
+            {item.photoCount > 0 && !photos[item.requestId]?.length && <div className="jn-inline-actions">
+              <button type="button" className="jn-button jn-button-outline" disabled={photoLoading !== ''} onClick={() => void loadPhotos(item.requestId, item.photoCount)}>
+                {photoLoading === item.requestId ? 'Memuat foto…' : 'Lihat foto aktual (' + item.photoCount + ')'}
+              </button>
+            </div>}
+            {photoErrors[item.requestId] && <div className="jn-alert jn-alert-error">{photoErrors[item.requestId]}</div>}
+            {photos[item.requestId]?.length > 0 && <div className="jn-photo-grid">{photos[item.requestId].map((src, index) => <img key={index} src={src} alt={'Foto aktual ' + item.productName + ' ' + (index + 1)} loading="lazy" />)}</div>}
             {item.status === 'found' && item.photoCount > 0 && !item.customerDecision && <div className="jn-inline-actions"><button type="button" disabled={busyItem === item.requestId} className="jn-button jn-button-primary" onClick={() => void decide(item.requestId, 'approved')}>Setujui barang</button><button type="button" disabled={busyItem === item.requestId} className="jn-button jn-button-outline" onClick={() => void decide(item.requestId, 'rejected')}>Belum setuju</button></div>}
             {item.customerDecision && <p className="jn-muted">Keputusan kamu: {item.customerDecision === 'approved' ? 'Disetujui' : 'Belum disetujui'}</p>}
           </article>)}
@@ -668,20 +749,32 @@ function AdminPage() {
       setError('Bukti pembayaran harus berupa JPG, PNG, WebP, atau PDF.')
       return
     }
+    const proofSignature = [proof.name, proof.size, proof.lastModified].join(':')
+    const idempotencyKey = getFormIdempotencyKey(form, { requestGroupId: groupId, type: 'deposit', amount, method, notes, proofSignature })
+    const proofIdField = getHiddenFormField(form, '_jn_uploaded_proof_id')
+    const proofSignatureField = getHiddenFormField(form, '_jn_proof_signature')
+    if (proofSignatureField.value && proofSignatureField.value !== proofSignature) proofIdField.value = ''
+    proofSignatureField.value = proofSignature
     setError('')
     try {
-      const prepared = await prepareUploadFile(proof)
-      const uploaded = await uploadAdminPaymentProof(sessionToken, prepared)
+      let proofFileId = proofIdField.value
+      if (!proofFileId) {
+        const prepared = await prepareUploadFile(proof)
+        const uploaded = await uploadAdminPaymentProof(sessionToken, prepared)
+        proofFileId = uploaded.fileId
+        proofIdField.value = proofFileId
+      }
       await addAdminPayment(sessionToken, {
         requestGroupId: groupId,
         type: 'deposit',
         amount,
         method,
-        proofFileId: uploaded.fileId,
-        idempotencyKey: window.crypto.randomUUID(),
+        proofFileId,
+        idempotencyKey,
         notes,
       })
       setNotice('Deposit dicatat. Lanjutkan dengan memeriksa bukti lalu klik verifikasi.')
+      clearFormRetryState(form)
       form.reset()
       await refresh(sessionToken)
     } catch (reason) {
@@ -739,19 +832,31 @@ function AdminPage() {
       setError('Tipe pembayaran tidak didukung.')
       return
     }
+    const proofSignature = [proof.name, proof.size, proof.lastModified].join(':')
+    const idempotencyKey = getFormIdempotencyKey(form, { orderId, type, amount, method, notes, proofSignature })
+    const proofIdField = getHiddenFormField(form, '_jn_uploaded_proof_id')
+    const proofSignatureField = getHiddenFormField(form, '_jn_proof_signature')
+    if (proofSignatureField.value && proofSignatureField.value !== proofSignature) proofIdField.value = ''
+    proofSignatureField.value = proofSignature
     try {
-      const prepared = await prepareUploadFile(proof)
-      const uploaded = await uploadAdminPaymentProof(sessionToken, prepared)
+      let proofFileId = proofIdField.value
+      if (!proofFileId) {
+        const prepared = await prepareUploadFile(proof)
+        const uploaded = await uploadAdminPaymentProof(sessionToken, prepared)
+        proofFileId = uploaded.fileId
+        proofIdField.value = proofFileId
+      }
       await addAdminPayment(sessionToken, {
         orderId,
         type: type as 'settlement' | 'shopee',
         amount,
         method,
-        proofFileId: uploaded.fileId,
-        idempotencyKey: window.crypto.randomUUID(),
+        proofFileId,
+        idempotencyKey,
         notes,
       })
       setNotice('Pembayaran dicatat dan menunggu verifikasi admin.')
+      clearFormRetryState(form)
       form.reset()
       await refresh(sessionToken)
     } catch (reason) {
@@ -801,20 +906,23 @@ function AdminPage() {
       return
     }
     try {
+      const idempotencyKey = getFormIdempotencyKey(form, { amount, occurredAt, category, description })
       await addAdminExpense(sessionToken, {
         amount,
         occurredAt,
         category,
         description,
-        idempotencyKey: window.crypto.randomUUID(),
+        idempotencyKey,
       })
       setNotice('Pengeluaran berhasil dicatat.')
+      clearFormRetryState(form)
       form.reset()
       await refresh(sessionToken)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Pengeluaran gagal dicatat.')
     }
   }
+
 
   return <AppShell>
     <div className="jn-admin-top"><div><span className="jn-eyebrow">OPERATIONS</span><h1>Admin workspace</h1><p>Kelola request, pencarian barang, unit fisik dan pesanan.</p></div><div className="jn-admin-top-actions"><button type="button" className="jn-button jn-button-outline" onClick={() => setSecurityFormOpen((open) => !open)}>{securityFormOpen ? 'Tutup keamanan' : 'Keamanan akun'}</button><button type="button" className="jn-button jn-button-outline" onClick={() => void signOut()}>Keluar</button></div></div>

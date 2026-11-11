@@ -149,28 +149,32 @@ function apiCustomerGetPortal(accessToken) {
 
 function apiCustomerGetPhoto(accessToken, requestId, photoIndex) {
   return safeApi_(function () {
-    var group = findRequestGroupByToken_(accessToken)
-    var request = findRecord_('Requests', 'request_id', requestId)
-    if (!request || String(request.request_group_id) !== String(group.request_group_id) ||
-        String(request.status) !== 'found') {
-      throw publicError_('NOT_FOUND', 'Foto tidak ditemukan atau tidak tersedia.')
-    }
-    var ids = safeJsonParse_(request.actual_photo_file_ids_json, [])
-    var index = Number(photoIndex)
-    if (!Number.isInteger(index) || index < 0 || index >= ids.length) {
-      throw publicError_('NOT_FOUND', 'Foto tidak ditemukan atau tidak tersedia.')
-    }
-    var file = DriveApp.getFileById(String(ids[index]))
-    var blob = file.getBlob()
-    var bytes = blob.getBytes()
-    if (bytes.length > 700000) {
-      throw publicError_('FILE_TOO_LARGE', 'Foto terlalu besar untuk ditampilkan. Minta admin mengunggah versi yang lebih kecil.')
-    }
-    var mimeType = blob.getContentType()
-    if (!/^image\/(jpeg|png|webp)$/.test(mimeType)) {
-      throw publicError_('INVALID_FILE', 'Format foto tidak didukung.')
-    }
-    return { mimeType: mimeType, base64: Utilities.base64Encode(bytes) }
+    // Serialize file reads with token revocation/reissue so a revoked bearer
+    // cannot continue fetching additional private photos after the mutation.
+    return withScriptLock_(function () {
+      var group = findRequestGroupByToken_(accessToken)
+      var request = findRecord_('Requests', 'request_id', requestId)
+      if (!request || String(request.request_group_id) !== String(group.request_group_id) ||
+          String(request.status) !== 'found') {
+        throw publicError_('NOT_FOUND', 'Foto tidak ditemukan atau tidak tersedia.')
+      }
+      var ids = safeJsonParse_(request.actual_photo_file_ids_json, [])
+      var index = Number(photoIndex)
+      if (!Number.isInteger(index) || index < 0 || index >= ids.length) {
+        throw publicError_('NOT_FOUND', 'Foto tidak ditemukan atau tidak tersedia.')
+      }
+      var file = DriveApp.getFileById(String(ids[index]))
+      var blob = file.getBlob()
+      var bytes = blob.getBytes()
+      if (bytes.length > 700000) {
+        throw publicError_('FILE_TOO_LARGE', 'Foto terlalu besar untuk ditampilkan. Minta admin mengunggah versi yang lebih kecil.')
+      }
+      var mimeType = blob.getContentType()
+      if (!/^image\/(jpeg|png|webp)$/.test(mimeType)) {
+        throw publicError_('INVALID_FILE', 'Format foto tidak didukung.')
+      }
+      return { mimeType: mimeType, base64: Utilities.base64Encode(bytes) }
+    })
   })
 }
 

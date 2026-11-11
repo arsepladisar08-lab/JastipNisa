@@ -47,6 +47,78 @@ if (!serverSource.includes('function doGet(e)') || !serverSource.includes('windo
   throw new Error('GAS server is missing validated deep-link bootstrap handling.')
 }
 
+function getServerFunctionSource(name) {
+  const start = serverSource.indexOf('function ' + name + '(')
+  if (start < 0) throw new Error('Missing Apps Script function: ' + name)
+  const end = serverSource.indexOf('\nfunction ', start + 10)
+  return serverSource.slice(start, end < 0 ? serverSource.length : end)
+}
+
+const adminMutations = [
+  'updateRequestItemAsAdmin_',
+  'reissueCustomerAccessTokenAsAdmin_',
+  'revokeCustomerAccessTokenAsAdmin_',
+  'addUnitAsAdmin_',
+  'assignUnitAsAdmin_',
+  'createOrderAsAdmin_',
+  'addPaymentAsAdmin_',
+  'verifyPaymentAsAdmin_',
+  'updateShipmentAsAdmin_',
+  'addExpenseAsAdmin_',
+  'updateOrderOptionsAsAdmin_',
+  'getPaymentProofAsAdmin_',
+  'uploadPaymentProofAsAdmin_',
+  'saveCatalogProductAsAdmin_',
+  'saveVariantAsAdmin_',
+]
+for (const name of adminMutations) {
+  const body = getServerFunctionSource(name)
+  const lock = body.indexOf('withScriptLock_(function () {')
+  if (lock < 0 || !body.slice(lock).includes('session = requireAdmin_(sessionToken)')) {
+    throw new Error('Admin mutation must revalidate its session inside LockService: ' + name)
+  }
+}
+
+const photoUploadBody = getServerFunctionSource('uploadRequestPhotoAsAdmin_')
+if (!photoUploadBody.includes('session = requireAdmin_(sessionToken)') ||
+    !photoUploadBody.includes('file.setTrashed(true)')) {
+  throw new Error('Request-photo upload must revalidate admin session and clean up stale Drive files.')
+}
+
+const customerDetailsBody = getServerFunctionSource('submitCustomerOrderDetails_')
+const customerShopeeBody = getServerFunctionSource('confirmCustomerShopee_')
+for (const [name, body] of [['submitCustomerOrderDetails_', customerDetailsBody], ['confirmCustomerShopee_', customerShopeeBody]]) {
+  const lock = body.indexOf('withScriptLock_(function () {')
+  if (lock < 0 || !body.slice(lock).includes('findRequestGroupByToken_(accessToken)')) {
+    throw new Error('Customer mutation must revalidate its bearer token inside LockService: ' + name)
+  }
+}
+
+const customerDecisionBody = getServerFunctionSource('customerRespondToItem_')
+const customerDecisionLock = customerDecisionBody.indexOf('withScriptLock_(function () {')
+if (customerDecisionLock < 0 ||
+    !customerDecisionBody.slice(customerDecisionLock).includes('findRequestGroupByToken_(accessToken)') ||
+    !customerDecisionBody.slice(customerDecisionLock).includes('DECISION_ALREADY_RECORDED')) {
+  throw new Error('Customer decisions must revalidate tokens under lock and prevent conflicting repeated decisions.')
+}
+
+const customerPhotoBody = getServerFunctionSource('apiCustomerGetPhoto')
+const customerPhotoLock = customerPhotoBody.indexOf('withScriptLock_(function () {')
+if (customerPhotoLock < 0 ||
+    customerPhotoBody.indexOf('DriveApp.getFileById') < customerPhotoLock) {
+  throw new Error('Customer photo reads must be serialized with customer-token revocation.')
+}
+
+const paymentBody = getServerFunctionSource('addPaymentAsAdmin_')
+const expenseBody = getServerFunctionSource('addExpenseAsAdmin_')
+if (!paymentBody.includes('idempotency_payload_hash') || !paymentBody.includes('IDEMPOTENCY_CONFLICT') ||
+    !expenseBody.includes('idempotency_payload_hash') || !expenseBody.includes('IDEMPOTENCY_CONFLICT')) {
+  throw new Error('Payment and expense idempotency must fingerprint payloads and reject key conflicts.')
+}
+if (!serverSource.includes("'idempotency_payload_hash'")) {
+  throw new Error('Database schema must persist idempotency payload fingerprints.')
+}
+
 // Exercise doGet(e) with deterministic Apps Script service stubs. This does not
 // replace a deployment test, but verifies query validation and bootstrap HTML.
 const htmlServiceStub = {

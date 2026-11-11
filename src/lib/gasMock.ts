@@ -345,23 +345,52 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
       const group = findGroupByToken(a[0])
       const request = requests.find((item) => item.requestId === a[1] && item.requestGroupId === group.requestGroupId)
       if (!request || request.status !== 'found') return failure('INVALID_STATE', 'Item demo belum siap diputuskan.')
-      request.customerDecision = a[2] === 'approved' ? 'approved' : 'rejected'
-      group.status = request.customerDecision === 'approved' ? 'customer_details_received' : 'awaiting_customer_approval'
-      return success({ saved: true, decision: request.customerDecision })
+      if (!['approved', 'rejected'].includes(String(a[2])) || Number(request.photoCount || 0) < 1) {
+        return failure('PHOTO_REQUIRED', 'Foto aktual demo belum tersedia.')
+      }
+      const nextDecision = String(a[2])
+      if (request.customerDecision) {
+        if (request.customerDecision === nextDecision) return success({ saved: true, decision: nextDecision, reused: true })
+        return failure('DECISION_ALREADY_RECORDED', 'Keputusan untuk item demo ini sudah tercatat.')
+      }
+      if (nextDecision === 'rejected') {
+        units.filter((unit) => unit.heldRequestId === request.requestId && unit.status === 'held')
+          .forEach((unit) => {
+            unit.status = 'available'
+            unit.heldRequestId = ''
+          })
+        request.assignedUnitCount = 0
+      }
+      request.customerDecision = nextDecision
+      group.status = nextDecision === 'approved' ? 'customer_details_received' : 'awaiting_customer_approval'
+      return success({ saved: true, decision: nextDecision, reused: false })
     }
     case 'apiCustomerSubmitOrderDetails': {
       const group = findGroupByToken(a[0])
       const payload = a[1] || {}
+      if (group.orderId || ['order_creating', 'order_created'].includes(group.status)) return failure('INVALID_STATE', 'Order final demo sudah dibuat.')
       if (!String(payload.name || '').trim() || !String(payload.phone || '').trim() || !String(payload.address || '').trim()) return failure('INVALID_CUSTOMER_DETAILS', 'Lengkapi format order demo.')
+      const groupItems = requests.filter((item) => item.requestGroupId === group.requestGroupId)
+      if (!groupItems.length || !groupItems.every((item) => item.status === 'found' && item.customerDecision === 'approved')) {
+        return failure('ITEMS_NOT_APPROVED', 'Semua item demo harus ditemukan dan disetujui pelanggan.')
+      }
       group.customerName = String(payload.name)
       group.customerPhone = String(payload.phone)
       group.customerAddress = String(payload.address)
       group.status = 'customer_details_received'
       return success({ saved: true, status: group.status })
     }
-    case 'apiCustomerConfirmShopee':
-      findGroupByToken(a[0])
-      return success({ saved: true })
+    case 'apiCustomerConfirmShopee': {
+      const group = findGroupByToken(a[0])
+      const order = orders.find((item) => item.requestGroupId === group.requestGroupId)
+      if (!order?.shopeeCheckoutUrl) return failure('SHOPEE_NOT_READY', 'Link checkout Shopee demo belum diberikan admin.')
+      if (['cancelled', 'completed'].includes(order.status)) return failure('INVALID_STATE', 'Order demo sudah ditutup.')
+      const username = String(a[1] || '').trim()
+      if (username.length < 2) return failure('INVALID_SHOPEE_USERNAME', 'Nama akun Shopee demo perlu diisi.')
+      if (order.shopeeUsername === username) return success({ saved: true, reused: true })
+      order.shopeeUsername = username
+      return success({ saved: true, reused: false })
+    }
     case 'apiAdminLogin': {
       if (String(a[0] || '') !== adminPassword) return failure('LOGIN_FAILED', 'Password demo salah. Gunakan demo-admin.')
       const token = MOCK_ADMIN_SESSION
@@ -488,15 +517,28 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
     case 'apiAdminAddPayment': {
       requireAdmin(a[0])
       const payload = a[1] || {}
+      const fingerprint = JSON.stringify({
+        requestGroupId: String(payload.requestGroupId || ''),
+        orderId: String(payload.orderId || ''),
+        type: String(payload.type || 'deposit'),
+        amount: Number(payload.amount || 0),
+        method: String(payload.method || ''),
+        notes: String(payload.notes || ''),
+      })
       const duplicate = payments.find((item) => item.idempotencyKey === payload.idempotencyKey)
-      if (duplicate) return success({ paymentId: duplicate.paymentId, verificationStatus: duplicate.verificationStatus, reused: true })
+      if (duplicate) {
+        if (duplicate.idempotencyFingerprint && duplicate.idempotencyFingerprint !== fingerprint) {
+          return failure('IDEMPOTENCY_CONFLICT', 'Kunci pembayaran demo sudah digunakan untuk data yang berbeda.')
+        }
+        return success({ paymentId: duplicate.paymentId, verificationStatus: duplicate.verificationStatus, reused: true })
+      }
       const payment = {
         paymentId: id('demo-payment'), requestGroupId: String(payload.requestGroupId || ''),
         orderId: String(payload.orderId || ''), type: String(payload.type || 'deposit'),
         amount: Number(payload.amount || 0), method: String(payload.method || ''),
         verificationStatus: 'awaiting_verification', occurredAt: now(),
         notes: String(payload.notes || ''), hasProof: Boolean(payload.proofFileId),
-        idempotencyKey: String(payload.idempotencyKey || ''),
+        idempotencyKey: String(payload.idempotencyKey || ''), idempotencyFingerprint: fingerprint,
       }
       payments.push(payment)
       return success({ paymentId: payment.paymentId, verificationStatus: payment.verificationStatus, reused: false })
@@ -506,6 +548,8 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
       const payment = payments.find((item) => item.paymentId === a[1])
       if (!payment) return failure('PAYMENT_NOT_FOUND', 'Pembayaran demo tidak ditemukan.')
       if (!['verified', 'rejected'].includes(String(a[2]))) return failure('INVALID_STATE', 'Keputusan pembayaran tidak valid.')
+      if (payment.verificationStatus === String(a[2])) return success({ saved: true, verificationStatus: payment.verificationStatus, reused: true })
+      if (payment.verificationStatus !== 'awaiting_verification') return failure('INVALID_STATE', 'Pembayaran demo sudah diputuskan dengan status berbeda.')
       payment.verificationStatus = String(a[2])
       payment.verifiedAt = payment.verificationStatus === 'verified' ? now() : ''
       const order = orders.find((item) => item.orderId === payment.orderId)
@@ -591,13 +635,25 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
     case 'apiAdminAddExpense': {
       requireAdmin(a[0])
       const payload = a[1] || {}
+      const fingerprint = JSON.stringify({
+        occurredAt: String(payload.occurredAt || now().slice(0, 10)),
+        category: String(payload.category || 'Lainnya'),
+        description: String(payload.description || ''),
+        amount: Number(payload.amount || 0),
+        orderId: String(payload.orderId || ''),
+      })
       const duplicate = expenses.find((item) => item.idempotencyKey === payload.idempotencyKey)
-      if (duplicate) return success({ expenseId: duplicate.expenseId, reused: true })
+      if (duplicate) {
+        if (duplicate.idempotencyFingerprint && duplicate.idempotencyFingerprint !== fingerprint) {
+          return failure('IDEMPOTENCY_CONFLICT', 'Kunci pengeluaran demo sudah digunakan untuk data yang berbeda.')
+        }
+        return success({ expenseId: duplicate.expenseId, reused: true })
+      }
       const expense = {
         expenseId: id('demo-expense'), occurredAt: String(payload.occurredAt || now().slice(0, 10)),
         category: String(payload.category || 'Lainnya'), description: String(payload.description || ''),
         amount: Number(payload.amount || 0), orderId: String(payload.orderId || ''),
-        idempotencyKey: String(payload.idempotencyKey || ''),
+        idempotencyKey: String(payload.idempotencyKey || ''), idempotencyFingerprint: fingerprint,
       }
       expenses.push(expense)
       return success({ expenseId: expense.expenseId, reused: false })

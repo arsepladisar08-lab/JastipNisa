@@ -152,32 +152,67 @@ function createPublicRequest_(payload) {
 }
 
 function customerRespondToItem_(accessToken, requestId, decision) {
-  var group = findRequestGroupByToken_(accessToken)
-  var request = findRecord_('Requests', 'request_id', requestId)
-  if (!request || String(request.request_group_id) !== String(group.request_group_id)) {
-    throw publicError_('NOT_FOUND', 'Item request tidak ditemukan.')
-  }
-  if (String(request.status) !== 'found') {
-    throw publicError_('INVALID_STATE', 'Persetujuan hanya dapat diberikan setelah admin menemukan barang.')
-  }
-  var photoIds = safeJsonParse_(request.actual_photo_file_ids_json, [])
-  if (!photoIds.length) {
-    throw publicError_('PHOTO_REQUIRED', 'Foto aktual belum tersedia untuk diperiksa.')
-  }
   var nextDecision = String(decision || '')
   if (['approved', 'rejected'].indexOf(nextDecision) === -1) {
     throw publicError_('INVALID_DECISION', 'Pilihan persetujuan tidak valid.')
   }
-  withScriptLock_(function () {
-    updateRecord_('Requests', 'request_id', requestId, {
-      customer_decision: nextDecision,
-      updated_at: isoNow_()
-    })
-    appendAudit_('customer', group.request_group_id, 'item_' + nextDecision, 'request', requestId, {})
-  })
-  return { saved: true, decision: nextDecision }
-}
 
+  return withScriptLock_(function () {
+    // Revalidate the bearer token and all mutable item state while serialized
+    // with admin edits, token revocation, and unit allocation.
+    var group = findRequestGroupByToken_(accessToken)
+    var request = findRecord_('Requests', 'request_id', requestId)
+    if (!request || String(request.request_group_id) !== String(group.request_group_id)) {
+      throw publicError_('NOT_FOUND', 'Item request tidak ditemukan.')
+    }
+    if (String(request.status) !== 'found') {
+      throw publicError_('INVALID_STATE', 'Persetujuan hanya dapat diberikan setelah admin menemukan barang.')
+    }
+    var photoIds = safeJsonParse_(request.actual_photo_file_ids_json, [])
+    if (!photoIds.length) {
+      throw publicError_('PHOTO_REQUIRED', 'Foto aktual belum tersedia untuk diperiksa.')
+    }
+
+    var currentDecision = String(request.customer_decision || '')
+    if (currentDecision) {
+      if (currentDecision === nextDecision) {
+        return { saved: true, decision: nextDecision, reused: true }
+      }
+      throw publicError_('DECISION_ALREADY_RECORDED', 'Keputusan untuk item ini sudah tercatat. Hubungi admin bila perlu perubahan.')
+    }
+
+    if (nextDecision === 'rejected') {
+      // Releasing held units here prevents a rejected item from blocking stock.
+      // Reserved units cannot exist before the approved final-order workflow.
+      var heldUnitIds = safeJsonParse_(request.unit_ids_json, [])
+      heldUnitIds.forEach(function (unitId) {
+        var unit = findRecord_('Units', 'unit_id', unitId)
+        if (unit && String(unit.status) === 'held' &&
+            String(unit.held_request_id) === String(requestId) &&
+            !String(unit.reserved_order_id || '')) {
+          updateRecord_('Units', 'unit_id', unitId, {
+            status: 'available',
+            held_request_id: '',
+            updated_at: isoNow_()
+          })
+        }
+      })
+      updateRecord_('Requests', 'request_id', requestId, {
+        customer_decision: nextDecision,
+        unit_ids_json: '[]',
+        updated_at: isoNow_()
+      })
+    } else {
+      updateRecord_('Requests', 'request_id', requestId, {
+        customer_decision: nextDecision,
+        updated_at: isoNow_()
+      })
+    }
+
+    appendAudit_('customer', group.request_group_id, 'item_' + nextDecision, 'request', requestId, {})
+    return { saved: true, decision: nextDecision, reused: false }
+  })
+}
 function submitCustomerOrderDetails_(accessToken, details) {
   var group = findRequestGroupByToken_(accessToken)
   var name = cleanText_(details && details.name, 100, 'Nama')
@@ -189,8 +224,16 @@ function submitCustomerOrderDetails_(accessToken, details) {
   }
 
   return withScriptLock_(function () {
+    // The token may have been revoked while this request waited for the lock.
+    var currentGroup = findRequestGroupByToken_(accessToken)
+    if (String(currentGroup.request_group_id) !== String(group.request_group_id)) {
+      throw publicError_('ACCESS_DENIED', 'Tautan akses tidak ditemukan atau sudah dinonaktifkan.')
+    }
+    if (currentGroup.order_id || ['order_creating', 'order_created'].indexOf(String(currentGroup.status)) !== -1) {
+      throw publicError_('INVALID_STATE', 'Order final sudah dibuat. Hubungi admin untuk perubahan data.')
+    }
     var requests = readRecords_('Requests').filter(function (row) {
-      return String(row.request_group_id) === String(group.request_group_id)
+      return String(row.request_group_id) === String(currentGroup.request_group_id)
     })
     if (!requests.length || requests.some(function (row) {
       return String(row.status) !== 'found' || String(row.customer_decision) !== 'approved'
@@ -198,20 +241,20 @@ function submitCustomerOrderDetails_(accessToken, details) {
       throw publicError_('ITEMS_NOT_APPROVED', 'Lengkapi persetujuan foto seluruh produk yang ditemukan sebelum mengirim format order.')
     }
 
-    var buyer = findRecord_('Buyers', 'buyer_id', group.buyer_id)
+    var buyer = findRecord_('Buyers', 'buyer_id', currentGroup.buyer_id)
     if (!buyer) throw publicError_('BUYER_NOT_FOUND', 'Data pelanggan tidak ditemukan.')
-    updateRecord_('Buyers', 'buyer_id', group.buyer_id, {
+    updateRecord_('Buyers', 'buyer_id', currentGroup.buyer_id, {
       name: name,
       phone: phone,
       phone_normalized: phoneNormalized,
       address: address,
       updated_at: isoNow_()
     })
-    updateRecord_('Request_Groups', 'request_group_id', group.request_group_id, {
+    updateRecord_('Request_Groups', 'request_group_id', currentGroup.request_group_id, {
       status: 'customer_details_received',
       updated_at: isoNow_()
     })
-    appendAudit_('customer', group.request_group_id, 'order_details_submitted', 'request_group', group.request_group_id, {})
+    appendAudit_('customer', currentGroup.request_group_id, 'order_details_submitted', 'request_group', currentGroup.request_group_id, {})
     return { saved: true, status: 'customer_details_received' }
   })
 }
@@ -220,22 +263,33 @@ function confirmCustomerShopee_(accessToken, username) {
   var group = findRequestGroupByToken_(accessToken)
   var value = cleanText_(username, 80, 'Nama akun Shopee')
   if (value.length < 2) throw publicError_('INVALID_SHOPEE_USERNAME', 'Nama akun Shopee perlu diisi.')
-  var orders = readRecords_('Orders').filter(function (row) {
-    return String(row.request_group_id) === String(group.request_group_id)
-  })
-  if (!orders.length || !orders[0].shopee_checkout_url) {
-    throw publicError_('SHOPEE_NOT_READY', 'Link checkout Shopee belum diberikan admin.')
-  }
-  withScriptLock_(function () {
+
+  return withScriptLock_(function () {
+    var currentGroup = findRequestGroupByToken_(accessToken)
+    if (String(currentGroup.request_group_id) !== String(group.request_group_id)) {
+      throw publicError_('ACCESS_DENIED', 'Tautan akses tidak ditemukan atau sudah dinonaktifkan.')
+    }
+    var orders = readRecords_('Orders').filter(function (row) {
+      return String(row.request_group_id) === String(currentGroup.request_group_id)
+    })
+    if (!orders.length || !orders[0].shopee_checkout_url) {
+      throw publicError_('SHOPEE_NOT_READY', 'Link checkout Shopee belum diberikan admin.')
+    }
+    if (['cancelled', 'completed'].indexOf(String(orders[0].status)) !== -1) {
+      throw publicError_('INVALID_STATE', 'Order sudah ditutup dan tidak menerima perubahan akun Shopee.')
+    }
+    if (String(orders[0].shopee_username || '') === value) {
+      return { saved: true, reused: true }
+    }
     updateRecord_('Orders', 'order_id', orders[0].order_id, {
       shopee_username: value,
       updated_at: isoNow_()
     })
-    updateRecord_('Buyers', 'buyer_id', group.buyer_id, {
+    updateRecord_('Buyers', 'buyer_id', currentGroup.buyer_id, {
       shopee_username: value,
       updated_at: isoNow_()
     })
-    appendAudit_('customer', group.request_group_id, 'shopee_username_confirmed', 'order', orders[0].order_id, {})
+    appendAudit_('customer', currentGroup.request_group_id, 'shopee_username_confirmed', 'order', orders[0].order_id, {})
+    return { saved: true, reused: false }
   })
-  return { saved: true }
 }

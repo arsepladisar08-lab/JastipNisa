@@ -17,20 +17,21 @@ function doGet(e) {
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
-    .replace(/\\u2028/g, '\\u2028')
-    .replace(/\\u2029/g, '\\u2029')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
   var bootstrapScript = '<script>window.__JN_BOOT__=' + safeBootstrap + ';</script>'
   var html = HtmlService.createHtmlOutputFromFile('Index').getContent()
-  if (!/<head\\b[^>]*>/i.test(html)) {
+  if (!/<head\b[^>]*>/i.test(html)) {
     throw new Error('Template Index.html tidak memiliki elemen head.')
   }
-  html = html.replace(/<head\\b[^>]*>/i, function (headTag) {
+  html = html.replace(/<head\b[^>]*>/i, function (headTag) {
     return headTag + bootstrapScript
   })
   return HtmlService.createHtmlOutput(html)
     .setTitle('JastipNisa')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
 }
+
 
 function apiHealth() {
   return safeApi_(function () {

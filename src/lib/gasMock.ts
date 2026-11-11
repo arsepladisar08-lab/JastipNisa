@@ -291,7 +291,12 @@ async function dispatch(method: string, args: unknown[]): Promise<MockEnvelope<u
       if (submissionId && duplicate) {
         return success({ ...duplicate, reusedSubmission: true })
       }
-      const preparedItems = items.map((item: MockRecord) => {
+      const preparedItems: Array<{
+        item: MockRecord
+        product: MockRecord | undefined
+        variant: MockRecord | undefined
+        quantity: number
+      }> = items.map((item: MockRecord) => {
         const product = products.find((row) => row.productId === item.productId && row.isActive)
         const variant = product && item.variantId
           ? variants.find((row) => row.variantId === item.variantId && row.productId === product.productId)

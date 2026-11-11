@@ -127,6 +127,9 @@ export type CustomerPortal = {
   createdAt: string
   items: Array<{
     requestId: string
+    productId: string
+    variantId: string
+    assignedUnitCount: number
     productName: string
     variantName: string
     quantity: number
@@ -234,4 +237,42 @@ export function uploadAdminRequestPhoto(
 
 export function logoutAdmin(sessionToken: string) {
   return gasCall<{ signedOut: boolean }>('apiAdminLogout', sessionToken)
+}
+
+export function addAdminUnit(
+  sessionToken: string,
+  payload: {
+    unitCode: string
+    productId: string
+    variantId?: string
+    purchasePrice: number
+    sellingPrice: number
+    conditionNotes?: string
+  },
+) {
+  return gasCall<{ unitId: string; unitCode: string; status: string }>('apiAdminAddUnit', sessionToken, payload)
+}
+
+export function assignAdminUnit(sessionToken: string, requestId: string, unitId: string) {
+  return gasCall<{ assigned: boolean; assignedCount: number; requiredCount: number }>(
+    'apiAdminAssignUnit',
+    sessionToken,
+    requestId,
+    unitId,
+  )
+}
+
+export function createAdminOrder(sessionToken: string, requestGroupId: string) {
+  return gasCall<{
+    orderId: string
+    orderCode: string
+    productCount: number
+    subtotal: number
+    fee: number
+    total: number
+  }>('apiAdminCreateOrder', sessionToken, requestGroupId)
+}
+
+export function confirmCustomerShopee(token: string, username: string) {
+  return gasCall<{ saved: boolean }>('apiCustomerConfirmShopee', token, username)
 }

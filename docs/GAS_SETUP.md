@@ -110,6 +110,14 @@ Manifest mendeklarasikan USER_DEPLOYING dan ANYONE_ANONYMOUS. Pilihan deployment
 
 Aplikasi belum siap menerima data pelanggan nyata sampai test matriks akses, upload file, request→unit→order, pembayaran, dan pengiriman lulus pada deployment staging.
 
+### Upload foto aktual dan bukti pembayaran
+
+- Foto JPG, PNG, atau WebP yang lebih besar dari 700 KB dikompres di browser sebelum dikirim. Hasil kompresi diubah ke JPEG, dibatasi pada sisi terpanjang 1.920 piksel, dan diturunkan kualitas/resolusinya bertahap sampai memenuhi batas.
+- Foto yang sudah berukuran 700 KB atau kurang dikirim tanpa perubahan. Transparansi PNG akan diratakan menjadi latar putih hanya saat file perlu dikompres menjadi JPEG.
+- Bukti PDF tidak dikompres otomatis dan tetap dibatasi maksimal 700 KB.
+- Server tetap memvalidasi tipe MIME dan ukuran hasil decode sebelum menyimpan file ke folder Drive privat. Kompresi di browser bukan pengganti validasi server.
+- Bila browser gagal membaca/mengompres foto atau ukuran hasil tetap melebihi batas, pilih foto dengan resolusi lebih rendah. Format HEIC belum didukung; ubah terlebih dahulu menjadi JPG, PNG, atau WebP.
+
 ### Hubungkan website publik Vercel
 
 Setelah Web App GAS staging/production siap, tambahkan environment variable berikut pada project Vercel:

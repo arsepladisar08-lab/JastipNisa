@@ -430,23 +430,31 @@ function recoverOrderCreation_(session, requestGroupId, draftOrder) {
 
   if (newItems.length) appendRecords_('Order_Items', newItems)
 
+  var unitReservationUpdates = []
+  var requestOrderUpdates = []
   requestItems.forEach(function (request) {
     safeJsonParse_(request.unit_ids_json, []).forEach(function (unitId) {
-      var unit = findRecord_('Units', 'unit_id', unitId)
-      if (String(unit.reserved_order_id || '') !== orderId) {
-        updateRecord_('Units', 'unit_id', unitId, {
+      unitReservationUpdates.push({
+        id: unitId,
+        patch: {
           status: 'reserved',
           held_request_id: '',
           reserved_order_id: orderId,
           updated_at: isoNow_()
-        })
-      }
+        }
+      })
     })
-    updateRecord_('Requests', 'request_id', request.request_id, {
-      status: 'ordered',
-      updated_at: isoNow_()
+    requestOrderUpdates.push({
+      id: request.request_id,
+      patch: { status: 'ordered', updated_at: isoNow_() }
     })
   })
+  if (unitReservationUpdates.length) {
+    updateRecordsById_('Units', 'unit_id', unitReservationUpdates)
+  }
+  if (requestOrderUpdates.length) {
+    updateRecordsById_('Requests', 'request_id', requestOrderUpdates)
+  }
 
   readRecords_('Payments').filter(function (payment) {
     return String(payment.request_group_id) === String(requestGroupId) &&
@@ -648,13 +656,16 @@ function updateShipmentAsAdmin_(sessionToken, payload) {
       updated_at: now
     })
     var items = readRecords_('Order_Items').filter(function (row) { return String(row.order_id) === orderId })
-    items.forEach(function (item) {
-      if (!item.unit_id) return
-      updateRecord_('Units', 'unit_id', item.unit_id, {
-        status: status === 'preparing' ? 'packed' : status === 'shipped' ? 'shipped' : status === 'delivered' ? 'completed' : 'issue',
-        updated_at: now
-      })
+    var unitUpdates = items.filter(function (item) { return Boolean(item.unit_id) }).map(function (item) {
+      return {
+        id: item.unit_id,
+        patch: {
+          status: status === 'preparing' ? 'packed' : status === 'shipped' ? 'shipped' : status === 'delivered' ? 'completed' : 'issue',
+          updated_at: now
+        }
+      }
     })
+    if (unitUpdates.length) updateRecordsById_('Units', 'unit_id', unitUpdates)
     appendAudit_('admin', session.role, 'shipment_' + status, 'shipment', shipmentId, { orderId: orderId })
     return { saved: true, status: status, orderStatus: orderStatus }
   })

@@ -13,8 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gas:validate": "node scripts/validate-gas.mjs",
-    "gas:push": "clasp push",
-    "gas:deploy": "clasp deploy --description \"JastipNisa React + GAS\"",
+    "gas:push": "npm run build:gas && npm run gas:validate && clasp push",
+    "gas:deploy": "npm run gas:push && clasp deploy --description \"JastipNisa React + GAS\"",
     "dev:gas-demo": "vite --host 0.0.0.0 --port 3001 --mode gas-demo --open /index.gas.html"
   },
   "dependencies": {

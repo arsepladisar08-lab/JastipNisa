@@ -664,34 +664,52 @@ function addExpenseAsAdmin_(sessionToken, payload) {
   var amount = Number(payload && payload.amount)
   var category = cleanText_(payload && payload.category, 50, 'Kategori')
   var occurredAt = cleanText_(payload && payload.occurredAt, 30, 'Tanggal')
+  var description = cleanText_(payload && payload.description || '', 500, 'Keterangan')
+  var orderId = cleanText_(payload && payload.orderId || '', 100, 'Order')
+  var idempotencyKey = cleanText_(payload && payload.idempotencyKey || '', 100, 'ID transaksi')
   if (!Number.isFinite(amount) || amount <= 0 || !category || !/^\d{4}-\d{2}-\d{2}$/.test(occurredAt)) {
     throw publicError_('INVALID_EXPENSE', 'Periksa kategori, nominal, dan tanggal pengeluaran.')
   }
+  if (idempotencyKey && idempotencyKey.length < 16) {
+    throw publicError_('INVALID_IDEMPOTENCY_KEY', 'ID transaksi tidak valid.')
+  }
+  var payloadHash = sha256Hex_(JSON.stringify({
+    occurredAt: occurredAt,
+    category: category,
+    description: description,
+    amount: amount,
+    orderId: orderId
+  }))
   return withScriptLock_(function () {
-    // Revalidate the session after acquiring the lock; logout/password rotation may race this mutation.
     session = requireAdmin_(sessionToken)
-    var idempotencyKey = cleanText_(payload.idempotencyKey || '', 100, 'ID transaksi')
-    if (idempotencyKey && idempotencyKey.length < 16) {
-      throw publicError_('INVALID_IDEMPOTENCY_KEY', 'ID transaksi tidak valid.')
-    }
     if (idempotencyKey) {
       var duplicate = readRecords_('Expenses').filter(function (row) {
         return String(row.idempotency_key || '') === idempotencyKey
       })[0]
-      if (duplicate) return { expenseId: String(duplicate.expense_id), reused: true }
+      if (duplicate) {
+        var storedHash = String(duplicate.idempotency_payload_hash || '')
+        if (storedHash && !constantTimeEqual_(storedHash, payloadHash)) {
+          throw publicError_('IDEMPOTENCY_CONFLICT', 'Kunci pengeluaran sudah digunakan untuk data yang berbeda.')
+        }
+        return { expenseId: String(duplicate.expense_id), reused: true }
+      }
+    }
+    if (orderId && !findRecord_('Orders', 'order_id', orderId)) {
+      throw publicError_('ORDER_NOT_FOUND', 'Pesanan untuk pengeluaran tidak ditemukan.')
     }
     var expenseId = newId_()
     appendRecords_('Expenses', [{
       expense_id: expenseId,
       occurred_at: occurredAt,
       category: category,
-      description: cleanText_(payload.description || '', 500, 'Keterangan'),
+      description: description,
       amount: amount,
-      order_id: cleanText_(payload.orderId || '', 100, 'Order'),
+      order_id: orderId,
       event_id: '',
       created_by: session.role,
       created_at: isoNow_(),
-      idempotency_key: idempotencyKey
+      idempotency_key: idempotencyKey,
+      idempotency_payload_hash: idempotencyKey ? payloadHash : ''
     }])
     appendAudit_('admin', session.role, 'expense_created', 'expense', expenseId, { amount: amount, category: category })
     return { expenseId: expenseId, reused: false }

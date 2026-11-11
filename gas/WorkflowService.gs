@@ -501,7 +501,8 @@ function addPaymentAsAdmin_(sessionToken, payload) {
   var idempotencyKey = cleanText_(payload && payload.idempotencyKey, 100, 'ID transaksi')
   var method = cleanText_(payload && payload.method || 'bank_transfer', 40, 'Metode pembayaran')
   var proofFileId = cleanText_(payload && payload.proofFileId || '', 150, 'Bukti pembayaran')
-  var occurredAt = cleanText_(payload && payload.occurredAt || isoNow_(), 40, 'Tanggal transaksi')
+  // Keep the idempotency fingerprint stable when clients omit an event timestamp.
+  var requestedOccurredAt = cleanText_(payload && payload.occurredAt || '', 40, 'Tanggal transaksi')
   var notes = cleanText_(payload && payload.notes || '', 500, 'Catatan')
   if (supported.indexOf(type) === -1 || !Number.isFinite(amount) || amount <= 0 ||
       idempotencyKey.length < 16 || Boolean(orderId) === Boolean(requestGroupId)) {
@@ -513,7 +514,7 @@ function addPaymentAsAdmin_(sessionToken, payload) {
     type: type,
     amount: amount,
     method: method,
-    occurredAt: occurredAt,
+    occurredAt: requestedOccurredAt,
     notes: notes
   }))
   return withScriptLock_(function () {
@@ -549,7 +550,7 @@ function addPaymentAsAdmin_(sessionToken, payload) {
       verified_by: '',
       idempotency_key: idempotencyKey,
       idempotency_payload_hash: payloadHash,
-      occurred_at: occurredAt,
+      occurred_at: requestedOccurredAt || isoNow_(),
       notes: notes,
       created_at: isoNow_()
     }])

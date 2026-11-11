@@ -44,6 +44,11 @@ import {
   type CatalogVariant,
   type CustomerPortal,
 } from '../lib/gasClient'
+import {
+  isImageUploadMimeType,
+  isSupportedUploadMimeType,
+  prepareUploadFile,
+} from '../lib/uploadPreparation'
 
 const ACCESS_TOKEN_KEY = 'jn.customer.access-token'
 const ADMIN_SESSION_KEY = 'jn.admin.session-token'
@@ -439,20 +444,6 @@ function AdminLoginPage() {
   return <AppShell><section className="jn-login-wrap"><div className="jn-login-card"><span className="jn-eyebrow">PRIVATE WORKSPACE</span><h1>Admin JastipNisa</h1><p>Masuk menggunakan password admin yang sudah diatur pada Apps Script.</p><form className="jn-form" onSubmit={submit}><label className="jn-field">Password admin<input autoComplete="current-password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error && <div className="jn-alert jn-alert-error">{error}</div>}<button className="jn-button jn-button-primary" disabled={busy}>{busy ? 'Memeriksa…' : 'Masuk workspace'}</button></form></div></section></AppShell>
 }
 
-function fileToBase64(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = String(reader.result || '')
-      const separator = result.indexOf(',')
-      if (separator < 0) reject(new Error('File foto tidak dapat dibaca.'))
-      else resolve(result.slice(separator + 1))
-    }
-    reader.onerror = () => reject(new Error('File foto gagal dibaca.'))
-    reader.readAsDataURL(file)
-  })
-}
-
 function AdminPage() {
   const navigate = useNavigate()
   const [sessionToken, setSessionToken] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) || '')
@@ -569,13 +560,13 @@ function AdminPage() {
   async function uploadPhoto(requestId: string, file?: File) {
     if (!file) return
     setError('')
-    if (file.size > 700000 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      setError('Gunakan foto JPG, PNG, atau WebP maksimal 700 KB.')
+    if (!isImageUploadMimeType(file.type)) {
+      setError('Gunakan foto JPG, PNG, atau WebP. Foto di atas 700 KB akan dikompres otomatis.')
       return
     }
     try {
-      const base64 = await fileToBase64(file)
-      await uploadAdminRequestPhoto(sessionToken, { requestId, fileName: file.name, mimeType: file.type, base64 })
+      const prepared = await prepareUploadFile(file)
+      await uploadAdminRequestPhoto(sessionToken, { requestId, ...prepared })
       setNotice('Foto aktual berhasil diunggah ke Drive privat.')
       await refresh(sessionToken)
     } catch (reason) {
@@ -619,18 +610,14 @@ function AdminPage() {
       setError('Nominal deposit dan bukti pembayaran wajib diisi.')
       return
     }
-    if (proof.size > 700000 || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(proof.type)) {
-      setError('Bukti pembayaran harus JPG, PNG, WebP, atau PDF maksimal 700 KB.')
+    if (!isSupportedUploadMimeType(proof.type)) {
+      setError('Bukti pembayaran harus berupa JPG, PNG, WebP, atau PDF.')
       return
     }
     setError('')
     try {
-      const base64 = await fileToBase64(proof)
-      const uploaded = await uploadAdminPaymentProof(sessionToken, {
-        fileName: proof.name,
-        mimeType: proof.type,
-        base64,
-      })
+      const prepared = await prepareUploadFile(proof)
+      const uploaded = await uploadAdminPaymentProof(sessionToken, prepared)
       await addAdminPayment(sessionToken, {
         requestGroupId: groupId,
         type: 'deposit',
@@ -690,8 +677,8 @@ function AdminPage() {
       setError('Nominal pembayaran dan bukti wajib diisi.')
       return
     }
-    if (proof.size > 700000 || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(proof.type)) {
-      setError('Bukti pembayaran harus JPG, PNG, WebP, atau PDF maksimal 700 KB.')
+    if (!isSupportedUploadMimeType(proof.type)) {
+      setError('Bukti pembayaran harus berupa JPG, PNG, WebP, atau PDF.')
       return
     }
     if (type !== 'settlement' && type !== 'shopee') {
@@ -699,12 +686,8 @@ function AdminPage() {
       return
     }
     try {
-      const base64 = await fileToBase64(proof)
-      const uploaded = await uploadAdminPaymentProof(sessionToken, {
-        fileName: proof.name,
-        mimeType: proof.type,
-        base64,
-      })
+      const prepared = await prepareUploadFile(proof)
+      const uploaded = await uploadAdminPaymentProof(sessionToken, prepared)
       await addAdminPayment(sessionToken, {
         orderId,
         type: type as 'settlement' | 'shopee',

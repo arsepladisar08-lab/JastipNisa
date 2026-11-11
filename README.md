@@ -4,7 +4,7 @@ Public-first jastip storefront and private admin workspace.
 
 ## Project status
 
-Initial foundation / Phase 0.1. Public landing page and catalog shell are being established first. The admin entry is intentionally omitted from public navigation, but access control must be enforced with Supabase Auth, trusted server checks, and PostgreSQL RLS—not obscurity.
+Foundation and admin operations are implemented: public storefront/catalog, Supabase Auth role gate, request/deposit verification, physical-unit tracking, final order creation, payment ledger, shipment tracking and operating expenses. The public customer request/status portal and direct customer-to-request workflow are still pending. Do not treat the app as production-ready until a real Supabase project has the migrations applied and the RLS/storage access matrix has been tested.
 
 ## Planned stack
 

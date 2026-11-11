@@ -50,11 +50,19 @@ No substantial skill source file is vendored into this repository. This is a pro
 - [x] Record operating expenses and review the recorded total.
 - [x] Upload unit photos, request-stage deposit proofs, order deposit proofs and payment/refund proofs to private Supabase Storage; admin previews use one-hour signed URLs.
 
-### Slice 3 — Further workflow refinement
-- [ ] Link request records directly to matched physical unit IDs; current order creation pre-fills the customer/model/variant and transfers verified deposit from a found request.
-- [ ] Improve cancellation handling and unit-release/reassignment controls.
-- [ ] Add filters, pagination and report exports for large operational datasets.
-- [ ] Add a customer-facing order status page only after the admin workflow is stable.
+### Slice 3 — Workflow integrity and reference migration
+- [x] Add an active reservation reference to each physical unit; retain historical order-item links while allowing a cancelled, pre-shipment unit to be reserved by another order.
+- [x] Validate physical-unit product/variant matching and reject conflicting active reservations at the database boundary.
+- [x] Make shipment upsert and order-status transition one admin-only PostgreSQL transaction.
+- [x] Make unit status read-only in the admin UI; fulfillment/cancellation changes it through order workflow triggers.
+- [x] Defer profile lookup from Supabase auth callbacks to avoid re-entrant auth/database calls.
+- [x] Remove the Vite development server's unrestricted host allow-list.
+- [x] Document the Google Apps Script HTML/Code.gs parity and migration decisions.
+- [ ] Link multi-item wishlist requests to matched physical unit IDs; current request intake is one product per request.
+- [ ] Add customer-facing request creation and secure status access using a high-entropy access token (not only the final four phone digits).
+- [ ] Add customer approval of actual unit photos, public format-order submission and Shopee username confirmation.
+- [ ] Add grouped “daftar buru”, filters, pagination and report exports for large operational datasets.
+- [ ] Improve financial reporting: realized fee income, unsettled balances, inventory capital, refunds and operating expenses must remain separately identifiable.
 
 ### Slice 4 — Deployment and release verification
 - [x] Run GitHub Actions typecheck, fee unit tests and production build successfully on the previous toolchain (Run #39); current Node 22 / Vite 8 upgrade is being re-verified.
@@ -67,3 +75,19 @@ No substantial skill source file is vendored into this repository. This is a pro
 ## Verification record
 
 The repository was empty before initialization. GitHub Actions Runs #36 and #39 passed dependency installation, TypeScript typecheck, unit tests and production build on the initial toolchain. A later Node 22 / Vite 8 / React 19 / TypeScript 7 upgrade is under CI verification. GitHub CI does not apply the Supabase migration or validate live RLS. No live Supabase project, admin account, WhatsApp number or Vercel deployment has been configured from this workspace yet.
+
+
+## Google Apps Script reference review
+
+The supplied `Index JastipNisa1.html` and `Code JastipNisa1.gs` are treated as workflow/UX references, not as a second production backend. Their public catalog, fee calculator, cart, customer status, format-order and Shopee interactions inform the next customer-facing slices. The React + Supabase repository remains the only target architecture.
+
+Do not port the GAS password/hash/session pattern, four-character order identifier plus four-digit phone lookup, or direct Spreadsheet row writes. Public status access must use a cryptographically random, high-entropy customer token stored only as a hash server-side. Public actions must be narrowly scoped RPCs; admin actions remain behind Supabase Auth, role checks and RLS.
+
+The GAS prototype creates a final `Pesanan` row as soon as a customer submits a cart. This repository intentionally separates a wishlist/deposit `request` from a confirmed `order`: an order can be created only after the admin has verified the deposit and marked the request as found. Deposit amount, unavailable-item refund/carry-forward, settlement deadline and customer cancellation policy remain explicit business decisions; do not infer them from the prototype.
+
+
+## Verification after workflow-integrity migration
+
+After applying `202611110002_unit_reservation_integrity.sql` in a disposable Supabase project, run `supabase/tests/unit_reservation_integrity_test.sql`. It checks variant mismatch rejection, active reservation exclusivity, release on pre-shipment cancellation, reassignment after cancellation and rejection of a manual stock reset.
+
+This SQL test has been added to the repository but has not been executed against a live Supabase instance from this workspace. Existing GitHub Actions do not provision a Supabase database, so passing CI alone does not certify RLS or trigger behavior.

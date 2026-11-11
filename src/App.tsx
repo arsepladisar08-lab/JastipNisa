@@ -289,24 +289,72 @@ function AdminLogin() {
 function AdminGuard({ children }: { children: ReactNode }) {
   const [state, setState] = useState<'loading' | 'allowed' | 'denied'>('loading')
   useEffect(() => {
-    let alive = true
     if (!supabase) { setState('denied'); return }
-    const verify = async () => {
-      const { data: sessionData } = await supabase!.auth.getSession()
-      const session = sessionData.session
-      if (!session) { if (alive) setState('denied'); return }
-      const { data: profile, error } = await supabase!.from('profiles').select('role,is_active').eq('id', session.user.id).maybeSingle()
-      if (error || profile?.role !== 'admin' || profile?.is_active !== true) {
-        await supabase!.auth.signOut()
-        if (alive) setState('denied')
+
+    let alive = true
+    let verificationId = 0
+
+    async function verify(sessionOverride?: { user: { id: string } } | null) {
+      const currentVerification = ++verificationId
+      let session = sessionOverride
+
+      if (sessionOverride === undefined) {
+        const { data, error } = await supabase!.auth.getSession()
+        if (error) {
+          if (alive && currentVerification === verificationId) setState('denied')
+          return
+        }
+        session = data.session
+      }
+
+      if (!session) {
+        if (alive && currentVerification === verificationId) setState('denied')
         return
       }
-      if (alive) setState('allowed')
+
+      const { data: profile, error } = await supabase!
+        .from('profiles')
+        .select('role,is_active')
+        .eq('id', session.user.id)
+        .maybeSingle()
+
+      if (!alive || currentVerification !== verificationId) return
+      if (error) {
+        setState('denied')
+        return
+      }
+      if (profile?.role !== 'admin' || profile?.is_active !== true) {
+        setState('denied')
+        void supabase!.auth.signOut()
+        return
+      }
+      setState('allowed')
     }
+
     void verify()
-    const { data: listener } = supabase.auth.onAuthStateChange(() => { void verify() })
-    return () => { alive = false; listener.subscription.unsubscribe() }
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!alive) return
+      if (event === 'SIGNED_OUT' || !session) {
+        verificationId += 1
+        setState('denied')
+        return
+      }
+
+      setState('loading')
+      // Defer Supabase work until the auth callback has returned. Supabase warns
+      // against making auth/database calls from inside onAuthStateChange.
+      window.setTimeout(() => {
+        if (alive) void verify(session)
+      }, 0)
+    })
+
+    return () => {
+      alive = false
+      verificationId += 1
+      listener.subscription.unsubscribe()
+    }
   }, [])
+
   if (state === 'loading') return <div className="admin-loading"><span className="spinner" /> Memeriksa akses admin…</div>
   if (state === 'denied') return <Navigate to="/admin/login" replace />
   return <>{children}</>
@@ -494,13 +542,6 @@ function UnitsManager() {
     }
   }
 
-  async function changeUnitStatus(id: string, status: string) {
-    if (!supabase) return
-    const { error } = await supabase.from('units').update({ status }).eq('id', id)
-    if (error) setNotice('Status unit gagal diperbarui.')
-    else { setNotice('Status unit diperbarui.'); await refresh() }
-  }
-
   const statusLabels: Record<string,string> = {
     available: 'Tersedia', reserved: 'Direservasi', sold: 'Terjual', packed: 'Dikemas',
     shipped: 'Dikirim', completed: 'Selesai', cancelled: 'Dibatalkan',
@@ -523,7 +564,7 @@ function UnitsManager() {
           <label className="unit-condition-field">Catatan kondisi<textarea rows={2} value={conditionNotes} onChange={e => setConditionNotes(e.target.value)} placeholder="Kondisi, defect minor, detail yang perlu diketahui customer" /></label>
           <button className="button button-dark" disabled={saving || !products.length}>{saving ? 'Menyimpan…' : 'Simpan Unit'}</button>
         </form>
-        <p className="order-helper unit-helper">Foto yang diunggah disimpan di bucket privat dan hanya dapat dibuka admin melalui signed URL sementara.</p>
+        <p className="order-helper unit-helper">Foto yang diunggah disimpan di bucket privat dan hanya dapat dibuka admin melalui signed URL sementara. Status unit mengikuti alur pesanan secara otomatis; batalkan pesanan melalui menu Pesanan untuk melepas reservasi yang belum dikirim.</p>
       </div>
       <div className="admin-panel">
         <div className="panel-heading"><div><span className="eyebrow">UNIT TRACKER</span><h3>{units.length} unit tercatat</h3></div></div>
@@ -538,7 +579,7 @@ function UnitsManager() {
                 <td>{unit.purchase_price == null ? '—' : formatRupiah(Number(unit.purchase_price))}</td>
                 <td>{unit.selling_price == null ? '—' : formatRupiah(Number(unit.selling_price))}</td>
                 <td>{photo ? <PrivateFileLink bucket="unit-photos" path={photo} label="Lihat foto" /> : 'Belum ada foto'}<small>{String(unit.condition_notes || 'Tanpa catatan kondisi')}</small></td>
-                <td><select className="order-status-select" value={String(unit.status)} onChange={e => void changeUnitStatus(String(unit.id), e.target.value)}>{Object.entries(statusLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></td>
+                <td><span className={unit.status === 'available' ? 'status-pill status-active' : 'status-pill status-muted'}>{statusLabels[String(unit.status)] || String(unit.status || 'Tidak diketahui')}</span></td>
               </tr>
             })}
           </tbody></table></div>
@@ -997,26 +1038,19 @@ function OrdersManager() {
       return
     }
     setUpdatingOrder(orderId); setNotice('')
-    const now = new Date().toISOString()
-    const { error } = await supabase.from('shipments').upsert({
-      order_id: orderId,
-      courier: shipmentCourier.trim() || null,
-      tracking_number: shipmentTracking.trim() || null,
-      status: shipmentStatus,
-      processed_at: now,
-      shipped_at: shipmentStatus === 'shipped' || shipmentStatus === 'delivered' ? now : null,
-      estimated_processing_days: '2–3 hari kerja',
-    }, { onConflict: 'order_id' })
-    if (error) {
-      setUpdatingOrder(null); setNotice('Data pengiriman gagal disimpan.'); return
-    }
-    const orderStatus = shipmentStatus === 'preparing' ? 'packing'
-      : shipmentStatus === 'shipped' ? 'shipped'
-      : shipmentStatus === 'delivered' ? 'completed' : 'issue'
-    const { error: orderError } = await supabase.from('orders').update({ status: orderStatus }).eq('id', orderId)
+    const { error } = await supabase.rpc('record_order_shipment', {
+      p_order_id: orderId,
+      p_courier: shipmentCourier.trim() || null,
+      p_tracking_number: shipmentTracking.trim() || null,
+      p_status: shipmentStatus,
+      p_notes: null,
+    })
     setUpdatingOrder(null)
-    if (orderError) setNotice('Data pengiriman tersimpan, tetapi status order perlu diselaraskan secara manual.')
-    else setNotice('Informasi pengiriman dan status order berhasil diperbarui.')
+    if (error) {
+      setNotice('Data pengiriman gagal disimpan. Periksa tahap pesanan, resi, dan konfirmasi Shopee.')
+      return
+    }
+    setNotice('Informasi pengiriman dan status order berhasil diperbarui dalam satu transaksi.')
     setShipmentOrderId(null)
     await refresh()
   }
@@ -1136,7 +1170,7 @@ function OrdersManager() {
                   </div> : <button type="button" className="small-action" onClick={() => { setPaymentOrderId(String(order.id)); setPaymentAmount(''); setPaymentNotes('') }}>Catat pembayaran</button>}
                 </td>
                 <td>
-                  <select className="order-status-select" aria-label={`Status order ${String(order.order_code)}`} disabled={updatingOrder === String(order.id)} value={String(order.status)} onChange={e => void changeOrderStatus(String(order.id), e.target.value)}>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+                  <select className="order-status-select" aria-label={`Status order ${String(order.order_code)}`} disabled={updatingOrder === String(order.id)} value={String(order.status)} onChange={e => void changeOrderStatus(String(order.id), e.target.value)}>{statuses.map(([value, label]) => <option key={value} value={value} disabled={value === 'shipped' || value === 'completed'}>{label}{value === 'shipped' || value === 'completed' ? ' · lewat Pengiriman' : ''}</option>)}</select>
                   <button type="button" className="small-action" onClick={() => {
                     const shipment = order.shipments as Record<string, unknown> | null
                     setShipmentOrderId(shipmentOrderId === String(order.id) ? null : String(order.id))
